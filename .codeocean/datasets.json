@@ -1,0 +1,41 @@
+{
+	"version": 1,
+	"attached_datasets": [
+		{
+			"id": "30dd60f8-d85d-46e6-8a6d-3af4b7577f04",
+			"mount": "reg_exaspim_template_to_ccf_withGradMap_10um_v1.0"
+		},
+		{
+			"id": "38be9251-cc4d-40c6-bb2f-ff160b989645",
+			"mount": "exaSPIM_template_25um"
+		},
+		{
+			"id": "3e2619dd-7035-4ab5-af68-1b75054b16d5",
+			"mount": "reg_exaspim_template_to_ccf_withGradMap_25um_v1.0"
+		},
+		{
+			"id": "725d783a-a2df-4c64-a5d8-cdc0f35afd3a",
+			"mount": "exaspim_template_7subjects_nomask_10um_round6_template_only"
+		},
+		{
+			"id": "79bf9032-5cff-4038-b2b8-8a24fa098e3b",
+			"mount": "allen_mouse_ccf"
+		},
+		{
+			"id": "90e5a323-b4a9-441e-baea-4f9717cda04f",
+			"mount": "reg_exaspim_template_to_ccf_25um_v1.1"
+		},
+		{
+			"id": "9aa34f05-39a4-4128-ad04-0071f554d1db",
+			"mount": "reg_exaspim_template_to_ccf_withGradMap_25um_v2"
+		},
+		{
+			"id": "ee48989d-ae51-4d6b-a520-adaf64831bc1",
+			"mount": "reg_exaspim_template_to_ccf_25um_v1.3"
+		},
+		{
+			"id": "f49b1346-e9ef-4201-b49b-a70fc6d12ae9",
+			"mount": "reg_exaspim_template_to_ccf_25um_v1.2"
+		}
+	]
+}
