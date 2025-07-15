@@ -566,6 +566,10 @@ class RegistrationPipeline:
         ants_img.set_direction(ants_exaspim.direction)
         ants_img.set_origin(ants_exaspim.origin)
         
+        figpath = f"{outprefix}{dataset_id}_loaded_zarr_img"
+        plot_antsimgs(perc_normalization(ants_img), 
+                      figpath, 
+                      title=f"{dataset_id}_loaded_zarr_img")
         ants.image_write(ants_img, f"{outprefix}{dataset_id}_loaded_zarr_img.nii.gz")
         self.logger.info(f"Loaded OMEZarr dataset as antsimg: {ants_img}")
 
