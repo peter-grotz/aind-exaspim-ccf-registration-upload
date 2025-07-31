@@ -10,12 +10,16 @@ import logging
 import os
 from datetime import datetime
 from typing import List, Optional
+import argparse
 
 import ants
 import numpy as np
 import zarr
 import dask.array as da
 from numcodecs import blosc
+import glob
+import s3fs
+from urllib.parse import urlparse
 
 from pathlib import Path
 from aind_exaspim_ccf_reg.utils import (
@@ -53,6 +57,62 @@ def load_zarr(
     return image
 
 
+def upload_alignment_data(
+    s3_path: str,
+    folder_to_upload: PathLike,
+) -> str:
+    """
+    generate output meta data, processing.json
+    Copies results to the destination bucket to make it available
+    to scientists as soon as possible.
+
+    Parameters
+    ----------
+    s3_path: str
+        New dataset name where the data will
+        be copied following the aind conventions
+        e.g., s3://{bucket_path}/{new_dataset_name}
+
+    folder_to_upload: PathLike
+        Results folder path in Code Ocean
+
+    Returns
+    -------
+    Tuple[str, str]
+        The first position is the path where the dataset
+        was moved. e.g., s3://{bucket_path}/{new_dataset_name}
+        It includes the "s3://" prefix. 
+        e.g., s3://{bucket_path}/{new_dataset_name}/{output_prediction}
+    """
+
+    #------------------------------------#
+    # upload alignment results to s3
+    #------------------------------------#
+    # s3_path = f"s3://{bucket_path}/{new_dataset_name}"
+    print(f"upload files to path {s3_path}")
+
+    fs = s3fs.S3FileSystem()
+    url = urlparse(s3_path)
+    print(f"url: {url}")
+
+    if url.scheme != "s3":
+        raise NotImplementedError("Only s3 output_uri is supported, not {url.scheme}")
+    
+    print(f"uploading {folder_to_upload}")
+    fs.put(
+        folder_to_upload, url.netloc + url.path.rstrip("/") + "/", recursive=True, maxdepth=10
+    ) 
+
+
+def get_root_s3_prefix(s3_uri, levels_up=1):
+    # Remove 's3://' and split path
+    scheme, bucket_and_key = s3_uri.split('://', 1)
+    bucket, *key_parts = bucket_and_key.split('/')
+  
+    # Go `levels_up` directories up from the current file path
+    base_key = '/'.join(key_parts[:levels_up])
+    return f's3://{bucket}/{base_key}/'
+
 def main() -> None:
     """
     Main function to run the CCF registration pipeline.
@@ -69,7 +129,7 @@ def main() -> None:
     CCF_FOLDER = os.path.abspath(f"{DATA_FOLDER}/allen_mouse_ccf")
     start_time = datetime.now()
 
-    processing_manifest_file = os.path.abspath(f"{DATA_FOLDER}/processing_manifest.json")
+    processing_manifest_file = os.path.abspath(glob.glob(f"{DATA_FOLDER}/*.json")[0])
     try:
         with open(processing_manifest_file, 'r') as f:
             dataset_config = json.load(f)
@@ -79,9 +139,13 @@ def main() -> None:
 
     print(f"processing_manifest_file: {processing_manifest_file}")
 
-    dataset_path = str(dataset_config["pipeline_processing"]["registration"]["alignment_channel_path"])
-    level = int(str(dataset_config["pipeline_processing"]["registration"]["level"]))
-    resolution = int(str(dataset_config["pipeline_processing"]["registration"]["resolution"]))
+    dataset_path = str(dataset_config["zarr_multiscale"]["input_uri"])
+    level = 3
+    resolution = 25
+
+    # dataset_path = str(dataset_config["pipeline_processing"]["registration"]["alignment_channel_path"])
+    # level = int(str(dataset_config["pipeline_processing"]["registration"]["level"]))
+    # resolution = int(str(dataset_config["pipeline_processing"]["registration"]["resolution"]))
     
     dataset_id = extract_dataset_id(dataset_path)
     print("Dataset ID:", dataset_id)
@@ -96,8 +160,8 @@ def main() -> None:
     logger.info(dataset_path)
 
     exaspim_to_ccf_transform_path = [
-        os.path.abspath("/data/reg_exaspim_template_to_ccf_25um_v1.3/1Warp.nii.gz"),
-        os.path.abspath("/data/reg_exaspim_template_to_ccf_25um_v1.3/0GenericAffine.mat")
+        os.path.abspath("/data/reg_exaspim_template_to_ccf_25um_v1.4/1Warp.nii.gz"),
+        os.path.abspath("/data/reg_exaspim_template_to_ccf_25um_v1.4/0GenericAffine.mat")
     ]
     
     logger.info(f"Starting processing for sample {dataset_id}")
@@ -145,7 +209,7 @@ def main() -> None:
     #-----------------------------------------------#
 
     start_date_time = datetime.now()
-    image_path = f"{dataset_path}/{level}"
+    image_path = f"{dataset_path}{level}"
     image = load_zarr(image_path, logger)
     end_date_time = datetime.now()
 
@@ -262,5 +326,39 @@ def main() -> None:
     logger.info(f"Finish all steps, execution time: {end_time - start_time} s")
 
 
+    s3_reg_path = get_root_s3_prefix(dataset_path)
+    print(f"Upload reg to {s3_reg_path}")
+    print(f"folder_to_upload: {outprefix_reg}")
+    
+    upload_alignment_data(
+        s3_reg_path,
+        outprefix_reg,
+    )
+
+
+
+
 if __name__ == "__main__":
     main()
+
+    # parser = argparse.ArgumentParser(description='CCF registration')
+    # parser.add_argument('dataset_path', help='S3 path to the ccf channel fusion')
+    # parser.add_argument('level', default=3, help='level of input data')
+    # parser.add_argument('resolution', default=25, help='resolution')
+    # args = parser.parse_args()
+
+    # dataset_path=args.dataset_path
+    # level=args.level
+    # resolution=args.resolution
+    # print(f"dataset_path: {dataset_path}")
+    # print(f"level: {level}")
+    # print(f"resolution: {resolution}")
+
+    # main(dataset_path, level, resolution)
+
+
+
+    # dataset_path = str(dataset_config["pipeline_processing"]["registration"]["alignment_channel_path"])
+    # level = int(str(dataset_config["pipeline_processing"]["registration"]["level"]))
+    # resolution = int(str(dataset_config["pipeline_processing"]["registration"]["resolution"]))
+    

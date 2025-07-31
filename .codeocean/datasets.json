@@ -30,6 +30,10 @@
 			"mount": "reg_exaspim_template_to_ccf_withGradMap_25um_v2"
 		},
 		{
+			"id": "a07157ab-990e-45d8-8e4c-53ebef2b74df",
+			"mount": "reg_exaspim_template_to_ccf_25um_v1.4"
+		},
+		{
 			"id": "ee48989d-ae51-4d6b-a520-adaf64831bc1",
 			"mount": "reg_exaspim_template_to_ccf_25um_v1.3"
 		},

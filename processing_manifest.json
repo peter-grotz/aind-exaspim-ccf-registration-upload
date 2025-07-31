@@ -1,0 +1,18 @@
+
+{
+    "pipeline_processing": {
+        "output_data_asset": "TODO",
+        "stitching": {
+            "s3_path": "s3://aind-open-data/exaSPIM_754613_2025-03-25_17-54-19_alignment_2025-04-08_07-40-38",
+            "task": "split_affine"
+        },   
+        "fusion": {
+            "s3_path": "s3://aind-scratch-data/exaSPIM_754613_2025-03-25_17-54-19_alignment_2025-04-08_07-40-38_fusionTESTEMR_split_affine_fix_voxel_dim4/fused.zarr"
+        },
+        "registration": {
+            "alignment_channel_path": "s3://aind-open-data/exaSPIM_713601_2024-09-23_15-58-38_flatfield-correction_2024-10-04_12-45-02_fusion_2025-02-25_18-11-02/fused.zarr",
+            "resolution": 25,
+            "level": 3
+        }
+    }
+}
