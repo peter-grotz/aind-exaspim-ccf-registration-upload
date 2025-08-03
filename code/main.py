@@ -98,17 +98,17 @@ def main() -> None:
     outprefix_reg = f"{DATA_FOLDER}/ccf_alignment/"
     print(f"folder_to_upload: {outprefix_reg}")
     
-    # upload_alignment_data(
-    #     s3_reg_path,
-    #     outprefix_reg,
-    # )
+    upload_alignment_data(
+        s3_reg_path,
+        outprefix_reg,
+    )
 
     outprefix_reg = f"{DATA_FOLDER}/soma_detection/"
     print(f"folder_to_upload: {outprefix_reg}")
-    # upload_alignment_data(
-    #     s3_reg_path,
-    #     outprefix_reg,
-    # )
+    upload_alignment_data(
+        s3_reg_path,
+        outprefix_reg,
+    )
 
     filename = f"{RESULTS_FOLDER}/finished_registration.tzt"
     with open(filename, 'w', encoding='utf-8') as f:
