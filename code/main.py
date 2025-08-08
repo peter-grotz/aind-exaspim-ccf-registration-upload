@@ -110,7 +110,7 @@ def main() -> None:
     #     outprefix_reg,
     # )
 
-    filename = f"{RESULTS_FOLDER}/finished_registration.tzt"
+    filename = f"{RESULTS_FOLDER}/finished_registration.txt"
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(s3_reg_path)
         
