@@ -93,9 +93,9 @@ def main() -> None:
 
     dataset_path = str(dataset_config["zarr_multiscale"]["input_uri"])
     s3_reg_path = get_root_s3_prefix(dataset_path)
-    if "aind-open-data" in s3_reg_path:
-        s3_reg_path = s3_reg_path.replace("aind-open-data", "aind-scratch-data")
-    print(f"Upload reg to {s3_reg_path}")
+    # if "aind-open-data" in s3_reg_path:
+    #     s3_reg_path = s3_reg_path.replace("aind-open-data", "aind-scratch-data")
+    # print(f"Upload reg to {s3_reg_path}")
 
     outprefix_reg = f"{DATA_FOLDER}/ccf_alignment/"
     print(f"folder_to_upload: {outprefix_reg}")
