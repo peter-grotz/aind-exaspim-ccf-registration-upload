@@ -1,15 +1,19 @@
 """
 Main script for uploading exaspim-to-template-to-CCF registration results.
 """
-import json
-import os
+
+from aind_exaspim_dataset_utils.smartsheet_util import SmartSheetClient
+from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
-import argparse
-import glob
-import s3fs
 from urllib.parse import urlparse
 
-from pathlib import Path
+import argparse
+import glob
+import json
+import os
+import re
+import s3fs
 
 
 def upload_alignment_data(
@@ -36,13 +40,13 @@ def upload_alignment_data(
     Tuple[str, str]
         The first position is the path where the dataset
         was moved. e.g., s3://{bucket_path}/{new_dataset_name}
-        It includes the "s3://" prefix. 
+        It includes the "s3://" prefix.
         e.g., s3://{bucket_path}/{new_dataset_name}/{output_prediction}
     """
 
-    #------------------------------------#
+    # ------------------------------------
     # upload alignment results to s3
-    #------------------------------------#
+    # ------------------------------------
     # s3_path = f"s3://{bucket_path}/{new_dataset_name}"
     print(f"upload files to path {s3_path}")
 
@@ -52,26 +56,59 @@ def upload_alignment_data(
 
     if url.scheme != "s3":
         raise NotImplementedError("Only s3 output_uri is supported, not {url.scheme}")
-    
+
     print(f"uploading {folder_to_upload}")
     fs.put(
         folder_to_upload, url.netloc + url.path.rstrip("/") + "/", recursive=True, maxdepth=10
-    ) 
+    )
+
+
+def find_brain_id(input_uri):
+    result = re.search(r'exaspim_(\d{6})', input_uri.lower())
+    if not result:
+        raise ValueError(f"Could not extract exaSPIM ID from {input_uri}")
+    brain_id = result.group(1)
+    return brain_id
 
 
 def get_root_s3_prefix(s3_uri, levels_up=1):
     # Remove 's3://' and split path
     scheme, bucket_and_key = s3_uri.split('://', 1)
     bucket, *key_parts = bucket_and_key.split('/')
-  
+
     # Go `levels_up` directories up from the current file path
     base_key = '/'.join(key_parts[:levels_up])
     return f's3://{bucket}/{base_key}/'
 
+
+def update_smartsheet(brain_id, access_token):
+    # Initialize client
+    sheet_name = "ExM Dataset Summary"
+    client = SmartSheetClient(access_token, sheet_name)
+    column_map = {col.title: col.id for col in client.sheet.columns}
+
+    # Update SmartSheet
+    updated_row = client.client.models.Row()
+    updated_row.id = client.find_row_id(brain_id)
+    updated_row.cells.append({
+        'column_id': column_map.get('CCF Registered'),
+        'value': True,
+        'strict': False
+    })
+    updated_row.cells.append({
+        'column_id': column_map.get('Affine Registration Date'),
+        'value': datetime.today().strftime("%m/%d/%Y"),
+        'strict': False
+    })
+
+    # Send row update
+    client.client.Sheets.update_rows(client.sheet_id, [updated_row])
+
+
 def main() -> None:
     """
     Main function to run the CCF registration pipeline.
-    
+
     This function orchestrates the entire registration process:
     1. Loads configuration from processing manifest
     2. Sets up output directories and logging
@@ -99,7 +136,7 @@ def main() -> None:
 
     outprefix_reg = f"{DATA_FOLDER}/ccf_alignment/"
     print(f"folder_to_upload: {outprefix_reg}")
-    
+
     upload_alignment_data(
         s3_reg_path,
         outprefix_reg,
@@ -115,6 +152,12 @@ def main() -> None:
     filename = f"{RESULTS_FOLDER}/finished_registration.txt"
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(s3_reg_path)
-        
+
+    # Update SmartSheet
+    access_token = "9Mx3umDssV5ugK9roAf9EEXQPmZq2ovX7tPyR"
+    brain_id = find_brain_id(dataset_path)
+    update_smartsheet(brain_id, access_token)
+
+
 if __name__ == "__main__":
     main()
