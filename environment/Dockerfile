@@ -34,5 +34,5 @@ RUN pip install -U --no-cache-dir \
     natsort==8.4.0 \
     crackle-codec==0.26.0 \
     aicsimageio@git+https://github.com/camilolaiton/aicsimageio.git@feature/zarrwriter-multiscales-daskjobs \
+    aind-exaspim-dataset-utils@git+https://github.com/AllenNeuralDynamics/aind-exaspim-dataset-utils.git@main \
     awscli 
-    
