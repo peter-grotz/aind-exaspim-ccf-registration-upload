@@ -1,32 +1,27 @@
 """
 Upload capsule — exaSPIM CCF-registration + soma-reg results.
 
-Responsibilities (PLAN.md §10.2):
-  Goal 1  build & VALIDATE the per-subfolder + top-level processing.json
-          (centralized metadata: producers emit process_record.json; we own the
-          only v2 aind-data-schema env). Upstream subfolder processing.json are
-          read from the existing S3 asset, read-only, and folded into the top-level.
-  Goal 2  curate the published S3 set so ccf_alignment/ and soma_detection/
-          match the ExaSPIM spec exactly (whitelist; drop intermediates).
-Bucket is PARAMETERIZED: production -> aind-open-data; test -> aind-scratch-data.
+Metadata (Goal 1): delegated to the official `aind-metadata-manager`, which
+collects producer `*_data_process.json` files + upstream `processing.json`
+(fetched from the asset's S3) and writes the aggregated, validated top-level
+`processing.json`.
+Curation (Goal 2): publish only the spec-compliant files for ccf_alignment/
+and soma_detection/.
+Bucket is parameterized: production -> aind-open-data; test -> aind-scratch-data.
 """
 
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
-import glob
 import json
 import os
 import re
 import shutil
 
 import s3fs
-
-import aind_processing_build as apb  # the v2 builder (this capsule's env only)
+from aind_metadata_manager.metadata_manager import MetadataManager, MetadataSettings
 
 # ---- Goal-2 publish whitelist (relative to each subfolder) ------------------
-# Globs of what MAY be published. processing.json is always kept. Everything
-# else the producer wrote to /results stays local and is NOT uploaded.
 PUBLISH_WHITELIST = {
     "ccf_alignment": [
         "*_to_exaSPIM_SyN_0GenericAffine.mat",
@@ -40,18 +35,14 @@ PUBLISH_WHITELIST = {
         "soma_locations.csv",
     ],
 }
-ALWAYS_KEEP = {"processing.json"}
-NEVER_UPLOAD = {"process_record.json"}  # internal producer record
-
-UPSTREAM_SUBFOLDERS = apb.UPSTREAM_SUBFOLDERS  # tile_alignment, fusion, flatfield_correction, denoised
+# Upstream subfolders whose existing processing.json is merged (read-only) by the manager.
+UPSTREAM_SUBFOLDERS = ("tile_alignment", "fusion", "flatfield_correction", "denoised")
 
 
-# ---------------------------------------------------------------------------
 def get_root_s3_prefix(s3_uri, levels_up=1):
     scheme, bucket_and_key = s3_uri.split("://", 1)
     bucket, *key_parts = bucket_and_key.split("/")
-    base_key = "/".join(key_parts[:levels_up])
-    return f"s3://{bucket}/{base_key}/"
+    return f"s3://{bucket}/{'/'.join(key_parts[:levels_up])}/"
 
 
 def find_brain_id(input_uri):
@@ -62,46 +53,48 @@ def find_brain_id(input_uri):
 
 
 def resolve_target(s3_reg_path: str) -> str:
-    """Parameterized bucket (PLAN.md §11). Default = production asset path.
-    Set UPLOAD_BUCKET to override (e.g. 'aind-scratch-data' for test runs)."""
+    """Parameterized bucket. Default = production asset path. Set UPLOAD_BUCKET
+    (e.g. 'aind-scratch-data') to override for test runs."""
     override = os.environ.get("UPLOAD_BUCKET")
-    if override:
-        scheme, rest = s3_reg_path.split("://", 1)
-        _, *key = rest.split("/")
-        return f"s3://{override}/" + "/".join(key)
-    return s3_reg_path
+    if not override:
+        return s3_reg_path
+    _, rest = s3_reg_path.split("://", 1)
+    _, *key = rest.split("/")
+    return f"s3://{override}/" + "/".join(key)
 
 
-def fetch_upstream_processing(s3_root: str, staging: Path, fs: s3fs.S3FileSystem) -> None:
-    """Copy upstream subfolders' processing.json from the existing asset into the
-    staging tree (read-only) so the aggregator can include their data_processes."""
+def fetch_upstream_metadata(s3_root: str, work: Path, fs: s3fs.S3FileSystem) -> None:
+    """Copy upstream metadata from the asset into the work tree (read-only) so
+    the manager merges it: any *processing.json and *_data_process.json under
+    each upstream subfolder. (The CCF-fusion capsule writes to S3, not through
+    the nextflow channel, so its data_process is picked up here.)"""
+    base = s3_root.rstrip("/")
     for sub in UPSTREAM_SUBFOLDERS:
-        remote = s3_root.rstrip("/") + f"/{sub}/processing.json"
-        try:
-            if fs.exists(remote):
-                (staging / sub).mkdir(parents=True, exist_ok=True)
-                fs.get(remote, str(staging / sub / "processing.json"))
-                print(f"  fetched upstream {sub}/processing.json")
-        except Exception as e:  # upstream may be absent; never fatal
-            print(f"  skip upstream {sub}: {e}")
+        for pattern in ("*processing.json", "*_data_process.json"):
+            try:
+                matches = fs.glob(f"{base}/{sub}/{pattern}")
+            except Exception:
+                matches = []
+            for remote in matches:
+                try:
+                    (work / sub).mkdir(parents=True, exist_ok=True)
+                    fs.get(remote, str(work / sub / os.path.basename(remote)))
+                    print(f"  fetched upstream {sub}/{os.path.basename(remote)}")
+                except Exception as e:  # never fatal
+                    print(f"  skip upstream {remote}: {e}")
 
 
-def stage_curated(src: Path, staging_sub: Path, patterns: list[str]) -> None:
-    """Copy ONLY whitelisted outputs (+ the process_record.json needed for
-    aggregation) from a producer's results subfolder into staging."""
-    staging_sub.mkdir(parents=True, exist_ok=True)
-    keep = list(patterns)
-    for rec in NEVER_UPLOAD:  # staged for the builder, removed before upload
-        if (src / rec).exists():
-            shutil.copy2(src / rec, staging_sub / rec)
-    for pat in keep:
+def stage_curated(src: Path, dst: Path, patterns: list) -> None:
+    """Copy only whitelisted outputs from a producer subfolder into the publish tree."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for pat in patterns:
         for match in src.glob(pat):
-            dest = staging_sub / match.relative_to(src)
-            dest.parent.mkdir(parents=True, exist_ok=True)
+            out = dst / match.relative_to(src)
+            out.parent.mkdir(parents=True, exist_ok=True)
             if match.is_dir():
-                shutil.copytree(match, dest, dirs_exist_ok=True)
+                shutil.copytree(match, out, dirs_exist_ok=True)
             else:
-                shutil.copy2(match, dest)
+                shutil.copy2(match, out)
 
 
 def upload(s3_path: str, folder: str, fs: s3fs.S3FileSystem) -> None:
@@ -124,6 +117,30 @@ def update_smartsheet(brain_id, access_token):
     client.client.Sheets.update_rows(client.sheet_id, [row])
 
 
+def build_processing_json(work: Path) -> Path:
+    """Run aind-metadata-manager over `work` to produce the aggregated top-level
+    processing.json (Goal 1). Producers' *_data_process.json + fetched upstream
+    processing.json are merged + validated. Returns the written file path."""
+    settings = MetadataSettings(
+        _cli_parse_args=False,
+        input_dir=work,
+        output_dir=work,
+        processor_full_name=os.environ.get("PROCESSOR_FULL_NAME", "AIND Scientific Computing"),
+        pipeline_name=os.environ.get("PIPELINE_NAME", "aind-exaSPIM-ccf-registration"),
+        pipeline_version=os.environ.get("PIPELINE_VERSION", "0.0.0"),
+        pipeline_url=os.environ.get(
+            "PIPELINE_URL", "https://codeocean.allenneuraldynamics.org/capsule/9578158/tree"
+        ),
+        aggregate_quality_control=False,  # QC deferred
+        skip_ancillary_files=True,        # ancillary/data_description handled elsewhere
+    )
+    processing = MetadataManager(settings).create_processing_metadata()
+    processing.write_standard_file(str(work))
+    out = work / "processing.json"
+    print(f"built top-level processing.json ({len(processing.data_processes)} processes): {out}")
+    return out
+
+
 def main() -> None:
     DATA_FOLDER = Path("../data").resolve()
     RESULTS_FOLDER = Path("../results").resolve()
@@ -134,32 +151,39 @@ def main() -> None:
     print(f"target asset: {s3_reg_path}")
 
     fs = s3fs.S3FileSystem()
-    staging = RESULTS_FOLDER / "_staging"
-    if staging.exists():
-        shutil.rmtree(staging)
-    staging.mkdir(parents=True)
+    work = RESULTS_FOLDER / "_work"
+    pub = RESULTS_FOLDER / "_publish"
+    for d in (work, pub):
+        if d.exists():
+            shutil.rmtree(d)
+        d.mkdir(parents=True)
 
-    # 1) curate our producer subfolders into staging (whitelist; keep records for builder)
-    for sub, patterns in PUBLISH_WHITELIST.items():
+    # 1) stage producer outputs in full (incl. *_data_process.json) for the manager
+    for sub in PUBLISH_WHITELIST:
         src = DATA_FOLDER / sub
         if src.exists():
-            stage_curated(src, staging / sub, patterns)
+            shutil.copytree(src, work / sub, dirs_exist_ok=True)
 
-    # 2) bring in upstream processing.json (read-only) for the aggregate
-    fetch_upstream_processing(s3_reg_path, staging, fs)
+    # 2) bring in upstream metadata (read-only) so the manager merges it
+    fetch_upstream_metadata(s3_reg_path, work, fs)
 
-    # 3) build + VALIDATE per-subfolder and top-level processing.json
-    top = apb.assemble(staging)
-    print(f"built processing.json with {len(top.data_processes)} processes")
+    # 3) Goal 1: aggregate + validate the top-level processing.json
+    top = build_processing_json(work)
 
-    # 4) drop internal records, then upload the curated, metadata-complete tree
-    for rec in staging.rglob("process_record.json"):
-        rec.unlink()
+    # 4) Goal 2: curate the publish set; include the top-level processing.json
+    for sub, patterns in PUBLISH_WHITELIST.items():
+        if (work / sub).exists():
+            stage_curated(work / sub, pub / sub, patterns)
+    shutil.copy2(top, pub / "processing.json")
+    # spec lists a processing.json inside ccf_alignment/ as well
+    (pub / "ccf_alignment").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(top, pub / "ccf_alignment" / "processing.json")
+
+    # 5) upload the curated, metadata-complete tree
     for sub in PUBLISH_WHITELIST:
-        if (staging / sub).exists():
-            upload(s3_reg_path, str(staging / sub), fs)
-    # top-level processing.json -> asset root
-    upload(s3_reg_path, str(staging / "processing.json"), fs)
+        if (pub / sub).exists():
+            upload(s3_reg_path, str(pub / sub), fs)
+    upload(s3_reg_path, str(pub / "processing.json"), fs)
 
     (RESULTS_FOLDER / "finished_registration.txt").write_text(s3_reg_path)
 
