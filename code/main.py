@@ -52,15 +52,16 @@ def find_brain_id(input_uri):
     return m.group(1)
 
 
-def resolve_target(s3_reg_path: str) -> str:
-    """Parameterized bucket. Default = production asset path. Set UPLOAD_BUCKET
-    (e.g. 'aind-scratch-data') to override for test runs."""
-    override = os.environ.get("UPLOAD_BUCKET")
-    if not override:
-        return s3_reg_path
-    _, rest = s3_reg_path.split("://", 1)
-    _, *key = rest.split("/")
-    return f"s3://{override}/" + "/".join(key)
+def resolve_output(in_base: str) -> str:
+    """Where to WRITE outputs. Reads always come from `in_base` (the input asset,
+    e.g. aind-open-data). When OUTPUT_PREFIX is set (e.g. a scratch test dir
+    s3://aind-scratch-data/exaspim_processing_test), outputs go to
+    {OUTPUT_PREFIX}/<asset_name>/; otherwise alongside the input asset."""
+    prefix = os.environ.get("OUTPUT_PREFIX")
+    if not prefix:
+        return in_base
+    asset_name = in_base.rstrip("/").split("/")[-1]
+    return f"{prefix.rstrip('/')}/{asset_name}/"
 
 
 def fetch_upstream_metadata(s3_root: str, work: Path, fs: s3fs.S3FileSystem) -> None:
@@ -147,8 +148,10 @@ def main() -> None:
     manifest = sorted(DATA_FOLDER.glob("*.json"))[0]
     dataset_config = json.loads(manifest.read_text())
     dataset_path = str(dataset_config["zarr_multiscale"]["input_uri"])
-    s3_reg_path = resolve_target(get_root_s3_prefix(dataset_path))
-    print(f"target asset: {s3_reg_path}")
+    in_base = get_root_s3_prefix(dataset_path)        # read inputs from here (aind-open-data)
+    out_base = resolve_output(in_base)                # write outputs here (scratch test dir if set)
+    print(f"input asset:   {in_base}")
+    print(f"output target: {out_base}")
 
     fs = s3fs.S3FileSystem()
     work = RESULTS_FOLDER / "_work"
@@ -164,8 +167,8 @@ def main() -> None:
         if src.exists():
             shutil.copytree(src, work / sub, dirs_exist_ok=True)
 
-    # 2) bring in upstream metadata (read-only) so the manager merges it
-    fetch_upstream_metadata(s3_reg_path, work, fs)
+    # 2) bring in upstream metadata (read-only, from the input asset) so the manager merges it
+    fetch_upstream_metadata(in_base, work, fs)
 
     # 3) Goal 1: aggregate + validate the top-level processing.json
     top = build_processing_json(work)
@@ -179,13 +182,13 @@ def main() -> None:
     (pub / "ccf_alignment").mkdir(parents=True, exist_ok=True)
     shutil.copy2(top, pub / "ccf_alignment" / "processing.json")
 
-    # 5) upload the curated, metadata-complete tree
+    # 5) upload the curated, metadata-complete tree to the OUTPUT target
     for sub in PUBLISH_WHITELIST:
         if (pub / sub).exists():
-            upload(s3_reg_path, str(pub / sub), fs)
-    upload(s3_reg_path, str(pub / "processing.json"), fs)
+            upload(out_base, str(pub / sub), fs)
+    upload(out_base, str(pub / "processing.json"), fs)
 
-    (RESULTS_FOLDER / "finished_registration.txt").write_text(s3_reg_path)
+    (RESULTS_FOLDER / "finished_registration.txt").write_text(out_base)
 
     token = os.environ.get("SMARTSHEET_TOKEN")  # was hard-coded — moved to a secret
     if token:
