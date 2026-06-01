@@ -16,9 +16,9 @@ ARG AWS_ACCESS_KEY_ID
 ARG AWS_DEFAULT_REGION
 ARG AWS_SECRET_ACCESS_KEY
 
-ARG GIT_ASKPASS
-ARG GIT_ACCESS_TOKEN
-COPY git-askpass /
+# (Removed COPY git-askpass / + GIT_* ARGs: all git pip-installs below are public
+#  AllenNeuralDynamics repos, so no build-time git auth is needed. The git-askpass
+#  helper was a CO-only build artifact not present in this GitHub-sourced capsule.)
 
 RUN conda install -y --channel=conda-forge \
         s3fs==2023.9.2 \
