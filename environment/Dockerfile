@@ -1,6 +1,10 @@
 # hash:sha256:3bd65a6ed0c112fdaa291b29e439fdbfa6a3a2157738a0a0e532d5377a2ce126
+# Upload capsule env — Python 3.10 for the v2 metadata stack. Metadata is built
+# by the official aind-metadata-manager (+ aind-metadata-upgrader), which run on
+# aind-data-schema v2. v2 + models v5 are GitHub tags (NOT on PyPI) and need
+# Python >=3.10. Slimmed: main.py only needs s3fs + dataset-utils + the manager.
 ARG REGISTRY_HOST
-FROM $REGISTRY_HOST/codeocean/jupyterlab:3.6.1-miniconda4.12.0-python3.9-ubuntu20.04
+FROM $REGISTRY_HOST/codeocean/mambaforge3:23.1.0-4-python3.10.12-ubuntu22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG AWS_ACCESS_KEY_ID
@@ -15,24 +19,18 @@ RUN conda install -y --channel=conda-forge \
         s3fs==2023.9.2 \
     && conda clean -ya
 
+# aind-data-schema v2 + its models v5 are git-tag-only (not on PyPI). Install
+# models FIRST, then the schema (ordering matters).
 RUN pip install -U --no-cache-dir \
-    antspyx==0.4.2 \
-    ome-zarr==0.8.2 \
-    simpleitk==2.3.0 \
-    zarr==2.16.1 \
-    argschema==3.0.4 \
+    "aind-data-schema-models @ git+https://github.com/AllenNeuralDynamics/aind-data-schema-models.git@v5.7.2" \
+    "aind-data-schema @ git+https://github.com/AllenNeuralDynamics/aind-data-schema.git@v2.7.1" \
+    pydantic-settings \
+    s3fs==2023.9.2 \
     openpyxl==3.1.5 \
-    aind-data-schema==1.3.0 \
-    s3fs==2022.11.0 \
-    scikit-image==0.19.3 \
-    tifffile==2022.10.10 \
-    bokeh==2.4.2 \
-    xarray_multiscale==1.1.0 \
-    dask[distributed]==2022.11.1 \
-    cloud-volume[all_codecs]==11.0.2 \
-    matplotlib==3.7.3 \
-    natsort==8.4.0 \
-    crackle-codec==0.26.0 \
-    aicsimageio@git+https://github.com/camilolaiton/aicsimageio.git@feature/zarrwriter-multiscales-daskjobs \
     aind-exaspim-dataset-utils@git+https://github.com/AllenNeuralDynamics/aind-exaspim-dataset-utils.git@main \
-    awscli 
+    awscli
+
+# Official AIND metadata tooling (git-only; deps already satisfied above -> --no-deps).
+RUN pip install -U --no-cache-dir --no-deps \
+    "aind-metadata-upgrader @ git+https://github.com/AllenNeuralDynamics/aind-metadata-upgrader.git@main" \
+    "aind-metadata-manager @ git+https://github.com/AllenNeuralDynamics/aind-metadata-manager.git@main"
