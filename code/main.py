@@ -126,7 +126,7 @@ def build_processing_json(work: Path) -> Path:
         input_dir=work,
         output_dir=work,
         processor_full_name=os.environ.get("PROCESSOR_FULL_NAME", "AIND Scientific Computing"),
-        pipeline_name=os.environ.get("PIPELINE_NAME", "aind-exaSPIM-ccf-registration"),
+        pipeline_name=os.environ.get("PIPELINE_NAME", "exaspim-data-processing"),
         pipeline_version=os.environ.get("PIPELINE_VERSION", "0.0.0"),
         pipeline_url=os.environ.get(
             "PIPELINE_URL", "https://codeocean.allenneuraldynamics.org/capsule/9578158/tree"
