@@ -65,24 +65,25 @@ def resolve_output(in_base: str) -> str:
 
 
 def fetch_upstream_metadata(s3_root: str, work: Path, fs: s3fs.S3FileSystem) -> None:
-    """Copy upstream metadata from the asset into the work tree (read-only) so
-    the manager merges it: any *processing.json and *_data_process.json under
-    each upstream subfolder. (The CCF-fusion capsule writes to S3, not through
-    the nextflow channel, so its data_process is picked up here.)"""
+    """Copy each upstream subfolder's existing processing.json from the asset into
+    the work tree (READ-ONLY) so the manager merges it into the ROOT aggregate.
+    Only *processing.json is fetched -- those existing records are left untouched
+    on S3. Our own producer data_processes (e.g. the CCF-channel fusion record)
+    are NOT read from S3; they arrive via the pipeline's /results channel and are
+    staged separately."""
     base = s3_root.rstrip("/")
     for sub in UPSTREAM_SUBFOLDERS:
-        for pattern in ("*processing.json", "*_data_process.json"):
+        try:
+            matches = fs.glob(f"{base}/{sub}/*processing.json")
+        except Exception:
+            matches = []
+        for remote in matches:
             try:
-                matches = fs.glob(f"{base}/{sub}/{pattern}")
-            except Exception:
-                matches = []
-            for remote in matches:
-                try:
-                    (work / sub).mkdir(parents=True, exist_ok=True)
-                    fs.get(remote, str(work / sub / os.path.basename(remote)))
-                    print(f"  fetched upstream {sub}/{os.path.basename(remote)}")
-                except Exception as e:  # never fatal
-                    print(f"  skip upstream {remote}: {e}")
+                (work / sub).mkdir(parents=True, exist_ok=True)
+                fs.get(remote, str(work / sub / os.path.basename(remote)))
+                print(f"  fetched upstream {sub}/{os.path.basename(remote)}")
+            except Exception as e:  # never fatal
+                print(f"  skip upstream {remote}: {e}")
 
 
 def stage_curated(src: Path, dst: Path, patterns: list) -> None:
@@ -222,6 +223,24 @@ def main() -> None:
         src = DATA_FOLDER / sub
         if src.exists():
             shutil.copytree(src, work / sub, dirs_exist_ok=True)
+
+    # 1b) stage the fusion capsule's data_process from /results (passed via the
+    # pipeline) so our CCF-channel fusion appears in the ROOT aggregate. fusion is
+    # NOT in PUBLISH_WHITELIST, so this is aggregated into the root processing.json
+    # but never republished to S3, and the existing fusion/processing.json on S3 is
+    # left untouched. If ../data/fusion/ is absent, the pipeline is not passing the
+    # fusion capsule's /results to upload -> the fusion record will be missing.
+    fusion_src = DATA_FOLDER / "fusion"
+    fusion_dps = list(fusion_src.glob("*_data_process.json")) if fusion_src.exists() else []
+    if fusion_dps:
+        (work / "fusion").mkdir(parents=True, exist_ok=True)
+        for f in fusion_dps:
+            shutil.copy2(f, work / "fusion" / f.name)
+            print(f"  staged fusion data_process for root aggregation: {f.name}")
+    else:
+        print("  WARNING: no fusion *_data_process.json in ../data/fusion -- the CCF-channel "
+              "fusion record will be ABSENT from the root processing.json. Confirm the pipeline "
+              "passes the fusion capsule's /results to the upload capsule's /data.")
 
     # 2) bring in upstream metadata (read-only, from the input asset) so the manager merges it
     fetch_upstream_metadata(in_base, work, fs)
