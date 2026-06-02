@@ -159,6 +159,45 @@ def build_processing_json(work: Path) -> Path:
     return out
 
 
+def build_stage_processing_json(stage_src: Path, work_root: Path, out_path: Path):
+    """Build a STAGE-SCOPED processing.json from only the *_data_process.json in
+    stage_src (e.g. ccf_alignment), matching the per-subfolder convention where
+    each stage folder carries its own processing record (tile_alignment/,
+    fusion/, ... each have one). The asset-ROOT processing.json
+    (build_processing_json) remains the full aggregated lineage. Returns the
+    written path, or None if the stage has no producer records."""
+    dp_files = sorted(stage_src.glob("*_data_process.json"))
+    if not dp_files:
+        print(f"no *_data_process.json in {stage_src}; skipping stage processing.json")
+        return None
+    stage_work = work_root / "_stage" / out_path.parent.name
+    if stage_work.exists():
+        shutil.rmtree(stage_work)
+    stage_work.mkdir(parents=True)
+    for f in dp_files:
+        shutil.copy2(f, stage_work / f.name)
+    settings = MetadataSettings(
+        _cli_parse_args=False,
+        input_dir=stage_work,
+        output_dir=stage_work,
+        processor_full_name=os.environ.get("PROCESSOR_FULL_NAME", "AIND Scientific Computing"),
+        pipeline_name=os.environ.get("PIPELINE_NAME", "exaspim-data-processing"),
+        pipeline_version=os.environ.get("PIPELINE_VERSION", "0.0.0"),
+        pipeline_url=os.environ.get(
+            "PIPELINE_URL", "https://codeocean.allenneuraldynamics.org/capsule/9578158/tree"
+        ),
+        aggregate_quality_control=False,
+        skip_ancillary_files=True,
+    )
+    processing = MetadataManager(settings).create_processing_metadata()
+    processing.write_standard_file(str(stage_work))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(stage_work / "processing.json", out_path)
+    print(f"built stage processing.json ({len(processing.data_processes)} processes) "
+          f"for {out_path.parent.name}: {out_path}")
+    return out_path
+
+
 def main() -> None:
     DATA_FOLDER = Path("../data").resolve()
     RESULTS_FOLDER = Path("../results").resolve()
@@ -194,10 +233,16 @@ def main() -> None:
     for sub, patterns in PUBLISH_WHITELIST.items():
         if (work / sub).exists():
             stage_curated(work / sub, pub / sub, patterns)
+    # Asset ROOT gets the full aggregated lineage; each published subfolder that
+    # produced its own *_data_process.json gets a STAGE-SCOPED processing.json,
+    # matching the per-subfolder convention (tile_alignment/, fusion/, ... each
+    # carry their own stage record). build_stage_processing_json skips subfolders
+    # with no producer records (e.g. soma_detection), so only the root holds the
+    # aggregate.
     shutil.copy2(top, pub / "processing.json")
-    # spec lists a processing.json inside ccf_alignment/ as well
-    (pub / "ccf_alignment").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(top, pub / "ccf_alignment" / "processing.json")
+    for sub in PUBLISH_WHITELIST:
+        if (work / sub).exists():
+            build_stage_processing_json(work / sub, work, pub / sub / "processing.json")
 
     # 5) upload the curated, metadata-complete tree to the OUTPUT target
     for sub in PUBLISH_WHITELIST:
