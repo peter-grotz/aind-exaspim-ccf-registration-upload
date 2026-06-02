@@ -98,12 +98,29 @@ def stage_curated(src: Path, dst: Path, patterns: list) -> None:
                 shutil.copy2(match, out)
 
 
-def upload(s3_path: str, folder: str, fs: s3fs.S3FileSystem) -> None:
+def upload(s3_path: str, local_path: str, fs: s3fs.S3FileSystem, dest_rel: str = "") -> None:
+    """Upload local_path to s3_path, preserving the published layout deterministically.
+
+    dest_rel pins the destination subpath so s3fs cannot flatten it: a directory's
+    CONTENTS are uploaded into <s3_path>/<dest_rel>/, and a file is uploaded to
+    <s3_path>/<dest_rel> (or <s3_path>/<filename> when dest_rel is empty). This
+    avoids the s3fs.put quirk where a single-file directory (e.g. soma_detection/
+    holding only soma_locations.csv) collapses onto the asset root instead of
+    landing under its own subfolder.
+    """
     url = urlparse(s3_path)
     if url.scheme != "s3":
         raise NotImplementedError(f"Only s3 output is supported, not {url.scheme}")
-    print(f"uploading {folder} -> {s3_path}")
-    fs.put(folder, url.netloc + url.path.rstrip("/") + "/", recursive=True, maxdepth=10)
+    base = url.netloc + url.path.rstrip("/")
+    p = Path(local_path)
+    if p.is_dir():
+        dest = f"{base}/{dest_rel.strip('/')}/" if dest_rel else f"{base}/"
+        print(f"uploading {p}/* -> s3://{dest}")
+        fs.put(str(p).rstrip("/") + "/", dest, recursive=True, maxdepth=20)
+    else:
+        key = f"{base}/{dest_rel.strip('/')}" if dest_rel else f"{base}/{p.name}"
+        print(f"uploading {p} -> s3://{key}")
+        fs.put(str(p), key)
 
 
 def update_smartsheet(brain_id, access_token):
@@ -185,8 +202,8 @@ def main() -> None:
     # 5) upload the curated, metadata-complete tree to the OUTPUT target
     for sub in PUBLISH_WHITELIST:
         if (pub / sub).exists():
-            upload(out_base, str(pub / sub), fs)
-    upload(out_base, str(pub / "processing.json"), fs)
+            upload(out_base, str(pub / sub), fs, dest_rel=sub)
+    upload(out_base, str(pub / "processing.json"), fs, dest_rel="processing.json")
 
     (RESULTS_FOLDER / "finished_registration.txt").write_text(out_base)
 
