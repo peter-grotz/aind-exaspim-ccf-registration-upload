@@ -100,14 +100,14 @@ def stage_curated(src: Path, dst: Path, patterns: list) -> None:
 
 
 def upload(s3_path: str, local_path: str, fs: s3fs.S3FileSystem, dest_rel: str = "") -> None:
-    """Upload local_path to s3_path, preserving the published layout deterministically.
+    """Upload local_path to s3_path/<dest_rel>, preserving the layout deterministically.
 
-    dest_rel pins the destination subpath so s3fs cannot flatten it: a directory's
-    CONTENTS are uploaded into <s3_path>/<dest_rel>/, and a file is uploaded to
-    <s3_path>/<dest_rel> (or <s3_path>/<filename> when dest_rel is empty). This
-    avoids the s3fs.put quirk where a single-file directory (e.g. soma_detection/
-    holding only soma_locations.csv) collapses onto the asset root instead of
-    landing under its own subfolder.
+    s3fs.put collapses a SINGLE-file directory onto the destination key -- e.g.
+    soma_detection/ holding only soma_locations.csv lands as an object literally
+    named 'soma_detection' (no slash) instead of soma_detection/soma_locations.csv,
+    even with an explicit trailing-slash destination. To defeat that, a directory's
+    TOP-LEVEL files are each uploaded to an explicit key, while sub-directories
+    (e.g. .zarr, which always contain many files) use the fast recursive put.
     """
     url = urlparse(s3_path)
     if url.scheme != "s3":
@@ -115,9 +115,14 @@ def upload(s3_path: str, local_path: str, fs: s3fs.S3FileSystem, dest_rel: str =
     base = url.netloc + url.path.rstrip("/")
     p = Path(local_path)
     if p.is_dir():
-        dest = f"{base}/{dest_rel.strip('/')}/" if dest_rel else f"{base}/"
-        print(f"uploading {p}/* -> s3://{dest}")
-        fs.put(str(p).rstrip("/") + "/", dest, recursive=True, maxdepth=20)
+        prefix = f"{base}/{dest_rel.strip('/')}" if dest_rel else base
+        for entry in sorted(p.iterdir()):
+            if entry.is_dir():
+                print(f"uploading {entry}/* -> s3://{prefix}/{entry.name}/")
+                fs.put(str(entry).rstrip("/") + "/", f"{prefix}/{entry.name}/", recursive=True, maxdepth=20)
+            else:
+                print(f"uploading {entry} -> s3://{prefix}/{entry.name}")
+                fs.put(str(entry), f"{prefix}/{entry.name}")
     else:
         key = f"{base}/{dest_rel.strip('/')}" if dest_rel else f"{base}/{p.name}"
         print(f"uploading {p} -> s3://{key}")
