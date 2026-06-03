@@ -141,6 +141,34 @@ def update_smartsheet(brain_id, access_token):
     client.client.Sheets.update_rows(client.sheet_id, [row])
 
 
+# Causally-correct dependencies for the processes WE produce (keyed by process
+# name; value = list of upstream process names it depends on). The metadata
+# manager cannot infer real edges from our lightweight data_process records, so
+# it produces a degenerate/incorrect graph; we set the truth explicitly. Only
+# edges we own/understand are encoded -- upstream-internal dependencies are left
+# as the manager produced them, since we don't own those capsules.
+KNOWN_DEPENDENCIES = {
+    "CCF channel fusion":             ["Image tile alignment"],
+    "Image atlas alignment - 25 um":  ["CCF channel fusion"],
+    "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
+    "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
+}
+
+
+def apply_known_dependencies(processing):
+    """Override the manager-inferred dependency_graph with KNOWN_DEPENDENCIES for
+    the processes we produce, keeping only edges to processes present in THIS
+    document. This is correct in both the ROOT aggregate and a stage-scoped doc:
+    e.g. in the ccf_alignment stage, 'CCF channel fusion' is absent, so the 25 um
+    alignment's dependency correctly resolves to []."""
+    present = {dp.name for dp in processing.data_processes}
+    dg = dict(processing.dependency_graph or {})
+    for name, deps in KNOWN_DEPENDENCIES.items():
+        if name in present:
+            dg[name] = [d for d in deps if d in present]
+    return processing.model_copy(update={"dependency_graph": dg})
+
+
 def build_processing_json(work: Path) -> Path:
     """Run aind-metadata-manager over `work` to produce the aggregated top-level
     processing.json (Goal 1). Producers' *_data_process.json + fetched upstream
@@ -159,6 +187,7 @@ def build_processing_json(work: Path) -> Path:
         skip_ancillary_files=True,        # ancillary/data_description handled elsewhere
     )
     processing = MetadataManager(settings).create_processing_metadata()
+    processing = apply_known_dependencies(processing)   # fix manager's degenerate graph
     processing.write_standard_file(str(work))
     out = work / "processing.json"
     print(f"built top-level processing.json ({len(processing.data_processes)} processes): {out}")
@@ -196,6 +225,7 @@ def build_stage_processing_json(stage_src: Path, work_root: Path, out_path: Path
         skip_ancillary_files=True,
     )
     processing = MetadataManager(settings).create_processing_metadata()
+    processing = apply_known_dependencies(processing)   # fix manager's degenerate graph (scoped to this stage)
     processing.write_standard_file(str(stage_work))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(stage_work / "processing.json", out_path)
