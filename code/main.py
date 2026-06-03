@@ -19,6 +19,7 @@ import re
 import shutil
 
 import s3fs
+from aind_data_schema.core.processing import Processing
 from aind_metadata_manager.metadata_manager import MetadataManager, MetadataSettings
 
 # ---- Goal-2 publish whitelist (relative to each subfolder) ------------------
@@ -169,6 +170,28 @@ def apply_known_dependencies(processing):
     return processing.model_copy(update={"dependency_graph": dg})
 
 
+def ensure_code_provenance(processing):
+    """Future-proofing: aind-data-schema warns now (and will eventually REQUIRE)
+    that every Code carries a commit_hash or version. Our own records already set
+    a version; this backfills version='unknown' for any process that arrives with
+    NEITHER (e.g. an incomplete upstream record like 'In-place multiscale
+    generation'), so the published processing.json stays valid once the
+    requirement is enforced. Logs what it backfilled so the upstream gap is
+    visible/actionable. Returns the (possibly re-validated) Processing."""
+    d = processing.model_dump()
+    patched = []
+    for dp in d.get("data_processes", []):
+        c = dp.get("code") or {}
+        if not c.get("version") and not c.get("commit_hash"):
+            c["version"] = "unknown"
+            dp["code"] = c
+            patched.append(dp.get("name"))
+    if not patched:
+        return processing
+    print(f"  backfilled Code.version='unknown' (missing version/commit_hash): {patched}")
+    return Processing.model_validate(d)
+
+
 def build_processing_json(work: Path) -> Path:
     """Run aind-metadata-manager over `work` to produce the aggregated top-level
     processing.json (Goal 1). Producers' *_data_process.json + fetched upstream
@@ -188,6 +211,7 @@ def build_processing_json(work: Path) -> Path:
     )
     processing = MetadataManager(settings).create_processing_metadata()
     processing = apply_known_dependencies(processing)   # fix manager's degenerate graph
+    processing = ensure_code_provenance(processing)     # backfill missing Code.version
     processing.write_standard_file(str(work))
     out = work / "processing.json"
     print(f"built top-level processing.json ({len(processing.data_processes)} processes): {out}")
@@ -226,6 +250,7 @@ def build_stage_processing_json(stage_src: Path, work_root: Path, out_path: Path
     )
     processing = MetadataManager(settings).create_processing_metadata()
     processing = apply_known_dependencies(processing)   # fix manager's degenerate graph (scoped to this stage)
+    processing = ensure_code_provenance(processing)     # backfill missing Code.version
     processing.write_standard_file(str(stage_work))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(stage_work / "processing.json", out_path)
