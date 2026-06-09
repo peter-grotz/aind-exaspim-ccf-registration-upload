@@ -153,6 +153,7 @@ KNOWN_DEPENDENCIES = {
     "Image atlas alignment - 25 um":  ["CCF channel fusion"],
     "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
     "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
+    "CCF objects to sample space":     ["Image atlas alignment - 25 um"],
 }
 
 
