@@ -154,6 +154,14 @@ KNOWN_DEPENDENCIES = {
     "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
     "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
     "CCF objects to sample space":     ["Image atlas alignment - 25 um"],
+    # Soma processes (from the soma DETECTION capsule, mounted via SOMA_META_DIR).
+    # Keys MUST match the records' `name` exactly; apply_known_dependencies ignores
+    # any key not present, so a name drift here is non-fatal (the process simply
+    # stays a graph root) -- confirm against the actual *_data_process.json and edit
+    # if the soma owner used different strings. Intra-soma lineage only: the detector
+    # reads the standard fused image, whose upstream process we do not own/name.
+    "Proposal classifications": ["Proposal generation"],
+    "Soma metrics":             ["Proposal classifications"],
 }
 
 
@@ -302,6 +310,31 @@ def main() -> None:
         print("  WARNING: no fusion *_data_process.json in ../data/fusion -- the CCF-channel "
               "fusion record will be ABSENT from the root processing.json. Confirm the pipeline "
               "passes the fusion capsule's /results to the upload capsule's /data.")
+
+    # 1c) soma metadata rides in a SEPARATE mount from the soma_locations.csv. Two
+    # capsules emit a top-level soma_detection/ folder: soma->CCF (capsule-4249884)
+    # produces the canonical soma_locations.csv (with xyz_ccf_auto), and soma
+    # DETECTION (capsule-7525101) produces the soma *_data_process.json records.
+    # They cannot both mount at ../data/soma_detection (Nextflow input-name
+    # collision), so the pipeline mounts the DETECTION connection at
+    # ../data/<SOMA_META_DIR> (default soma_detection_meta). We fold ONLY its
+    # *_data_process.json into work/soma_detection/, so the soma records aggregate
+    # into BOTH the root processing.json and the soma_detection stage processing.json
+    # just as if they had arrived alongside the CSV. The published soma_locations.csv
+    # stays the canonical soma->CCF one (we never copy a CSV from the meta mount).
+    soma_meta_dir = os.environ.get("SOMA_META_DIR", "soma_detection_meta")
+    soma_meta_src = DATA_FOLDER / soma_meta_dir
+    soma_meta_dps = list(soma_meta_src.glob("*_data_process.json")) if soma_meta_src.exists() else []
+    if soma_meta_dps:
+        (work / "soma_detection").mkdir(parents=True, exist_ok=True)
+        for f in soma_meta_dps:
+            shutil.copy2(f, work / "soma_detection" / f.name)
+            print(f"  staged soma data_process for aggregation: {f.name}")
+    else:
+        print(f"  WARNING: no soma *_data_process.json in ../data/{soma_meta_dir} -- soma metadata "
+              "will be ABSENT from processing.json. Confirm the pipeline mounts the soma DETECTION "
+              f"capsule's /results at ../data/{soma_meta_dir} (a SEPARATE mount from soma_detection, "
+              "to avoid the input-name collision).")
 
     # 2) bring in upstream metadata (read-only, from the input asset) so the manager merges it
     fetch_upstream_metadata(in_base, work, fs)
