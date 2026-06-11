@@ -322,9 +322,13 @@ def main() -> None:
     # into BOTH the root processing.json and the soma_detection stage processing.json
     # just as if they had arrived alongside the CSV. The published soma_locations.csv
     # stays the canonical soma->CCF one (we never copy a CSV from the meta mount).
+    # rglob (recursive) so it finds the records whether the pipeline maps the
+    # connection's destination flat (data/soma_detection_meta/*.json) or nested
+    # (data/soma_detection_meta/soma_detection/*.json) -- robust to how the CO
+    # connection's source/destination paths land.
     soma_meta_dir = os.environ.get("SOMA_META_DIR", "soma_detection_meta")
     soma_meta_src = DATA_FOLDER / soma_meta_dir
-    soma_meta_dps = list(soma_meta_src.glob("*_data_process.json")) if soma_meta_src.exists() else []
+    soma_meta_dps = list(soma_meta_src.rglob("*_data_process.json")) if soma_meta_src.exists() else []
     if soma_meta_dps:
         (work / "soma_detection").mkdir(parents=True, exist_ok=True)
         for f in soma_meta_dps:
