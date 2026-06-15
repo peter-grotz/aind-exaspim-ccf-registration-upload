@@ -155,13 +155,13 @@ KNOWN_DEPENDENCIES = {
     "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
     "CCF objects to sample space":     ["Image atlas alignment - 25 um"],
     # Soma processes (from the soma DETECTION capsule, mounted via SOMA_META_DIR).
-    # Keys MUST match the records' `name` exactly; apply_known_dependencies ignores
-    # any key not present, so a name drift here is non-fatal (the process simply
-    # stays a graph root) -- confirm against the actual *_data_process.json and edit
-    # if the soma owner used different strings. Intra-soma lineage only: the detector
-    # reads the standard fused image, whose upstream process we do not own/name.
-    "Proposal classifications": ["Proposal generation"],
-    "Soma metrics":             ["Proposal classifications"],
+    # Names verified against the actual records (aind-exaspim-soma-detection):
+    # the detector reads the standard fused image ("Image tile fusing"), then
+    # generate -> classify -> metrics. Keys MUST match the records' `name` exactly;
+    # apply_known_dependencies ignores any key not present (non-fatal).
+    "Proposal generation":     ["Image tile fusing"],
+    "Proposal classification": ["Proposal generation"],
+    "Soma metrics":            ["Proposal classification"],
 }
 
 
@@ -331,9 +331,19 @@ def main() -> None:
     soma_meta_dps = list(soma_meta_src.rglob("*_data_process.json")) if soma_meta_src.exists() else []
     if soma_meta_dps:
         (work / "soma_detection").mkdir(parents=True, exist_ok=True)
+        from aind_data_schema.core.processing import DataProcess  # validate, don't silently drop
         for f in soma_meta_dps:
             shutil.copy2(f, work / "soma_detection" / f.name)
-            print(f"  staged soma data_process for aggregation: {f.name}")
+            # The metadata manager silently SKIPS records that fail DataProcess
+            # validation (e.g. a process_type that isn't a valid ProcessName enum),
+            # so they'd vanish from processing.json with no trace. Validate here and
+            # warn loudly with the reason so a malformed soma record is visible.
+            try:
+                DataProcess.model_validate(json.loads(f.read_text()))
+                print(f"  staged soma data_process for aggregation: {f.name}")
+            except Exception as exc:
+                print(f"  WARNING: soma record {f.name} is INVALID and will be DROPPED by the "
+                      f"metadata manager -- fix it in the soma-detection capsule. Reason: {exc}")
     else:
         print(f"  WARNING: no soma *_data_process.json in ../data/{soma_meta_dir} -- soma metadata "
               "will be ABSENT from processing.json. Confirm the pipeline mounts the soma DETECTION "
