@@ -31,6 +31,7 @@ PUBLISH_WHITELIST = {
         "ccf_aligned.zarr",
         "ccf_anno_to_sample/ccf_anno_in_sample_space.nii.gz",
         "ccf_anno_to_sample/ccf_anno_in_sample_space.zarr",
+        "ccf_mesh_to_sample",  # CCF region meshes warped to sample space (.obj + qc/)
     ],
     "soma_detection": [
         "soma_locations.csv",
@@ -153,7 +154,7 @@ KNOWN_DEPENDENCIES = {
     "Image atlas alignment - 25 um":  ["CCF channel fusion"],
     "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
     "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
-    "CCF objects to sample space":     ["Image atlas alignment - 25 um"],
+    "CCF meshes to sample space":      ["Image atlas alignment - 25 um"],
     # Soma processes (from the soma DETECTION capsule, mounted via SOMA_META_DIR).
     # Names verified against the actual records (aind-exaspim-soma-detection):
     # the detector reads the standard fused image ("Image tile fusing"), then
