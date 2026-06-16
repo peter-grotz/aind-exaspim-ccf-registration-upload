@@ -333,15 +333,28 @@ def main() -> None:
     if soma_meta_dps:
         (work / "soma_detection").mkdir(parents=True, exist_ok=True)
         from aind_data_schema.core.processing import DataProcess  # validate, don't silently drop
+        # The soma DETECTION capsule stamps its records with its OWN pipeline_name
+        # ("exaspim-soma-detection"). aind-data-schema requires every
+        # DataProcess.pipeline_name to exist in the aggregated Processing.pipelines,
+        # but the manager registers only ONE pipeline (PIPELINE_NAME) from its
+        # settings -- so a foreign name makes the WHOLE Processing() fail to validate
+        # ("Pipeline name 'exaspim-soma-detection' not found in pipelines list"). We
+        # don't own that capsule, so we normalize the folded records' pipeline_name
+        # to THIS pipeline's name on the way in, matching every other producer record.
+        pipeline_name = os.environ.get("PIPELINE_NAME", "exaspim-data-processing")
         for f in soma_meta_dps:
-            shutil.copy2(f, work / "soma_detection" / f.name)
+            rec = json.loads(f.read_text())
+            orig = rec.get("pipeline_name")
+            rec["pipeline_name"] = pipeline_name
+            (work / "soma_detection" / f.name).write_text(json.dumps(rec, indent=3))
             # The metadata manager silently SKIPS records that fail DataProcess
             # validation (e.g. a process_type that isn't a valid ProcessName enum),
             # so they'd vanish from processing.json with no trace. Validate here and
             # warn loudly with the reason so a malformed soma record is visible.
             try:
-                DataProcess.model_validate(json.loads(f.read_text()))
-                print(f"  staged soma data_process for aggregation: {f.name}")
+                DataProcess.model_validate(rec)
+                note = "" if orig == pipeline_name else f" (pipeline_name '{orig}' -> '{pipeline_name}')"
+                print(f"  staged soma data_process for aggregation: {f.name}{note}")
             except Exception as exc:
                 print(f"  WARNING: soma record {f.name} is INVALID and will be DROPPED by the "
                       f"metadata manager -- fix it in the soma-detection capsule. Reason: {exc}")
