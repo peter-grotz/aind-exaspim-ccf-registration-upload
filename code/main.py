@@ -31,7 +31,8 @@ PUBLISH_WHITELIST = {
         "ccf_aligned.zarr",
         "ccf_anno_to_sample/ccf_anno_in_sample_space.nii.gz",
         "ccf_anno_to_sample/ccf_anno_in_sample_space.zarr",
-        "ccf_mesh_to_sample",  # CCF region meshes warped to sample space (.obj + qc/)
+        "ccf_mesh_to_sample/**/*.obj",  # publish ONLY the warped meshes (.obj);
+                                        # the qc/ overlay png stays results-only (never S3)
     ],
     "soma_detection": [
         "soma_locations.csv",
