@@ -1,13 +1,12 @@
 """
-Upload capsule — exaSPIM CCF-registration + soma-reg results.
+Upload capsule for the exaSPIM CCF-registration + soma-reg pipeline.
 
-Metadata (Goal 1): delegated to the official `aind-metadata-manager`, which
-collects producer `*_data_process.json` files + upstream `processing.json`
-(fetched from the asset's S3) and writes the aggregated, validated top-level
-`processing.json`.
-Curation (Goal 2): publish only the spec-compliant files for ccf_alignment/
-and soma_detection/.
-Bucket is parameterized: production -> aind-open-data; test -> aind-scratch-data.
+Aggregates the pipeline's producer and upstream metadata into a single validated
+top-level ``processing.json`` (via ``aind-metadata-manager`` on aind-data-schema
+v2) and publishes the curated subset of results to the asset's S3 location.
+
+Output bucket is environment-driven: production writes to the input asset
+(aind-open-data); setting ``OUTPUT_PREFIX`` redirects writes to a scratch dir.
 """
 
 from datetime import datetime
@@ -19,10 +18,10 @@ import re
 import shutil
 
 import s3fs
-from aind_data_schema.core.processing import Processing
+from aind_data_schema.core.processing import DataProcess, Processing
 from aind_metadata_manager.metadata_manager import MetadataManager, MetadataSettings
 
-# ---- Goal-2 publish whitelist (relative to each subfolder) ------------------
+# Files published to S3, per producer subfolder (globs relative to the subfolder).
 PUBLISH_WHITELIST = {
     "ccf_alignment": [
         "*_to_exaSPIM_SyN_0GenericAffine.mat",
@@ -31,24 +30,41 @@ PUBLISH_WHITELIST = {
         "ccf_aligned.zarr",
         "ccf_anno_to_sample/ccf_anno_in_sample_space.nii.gz",
         "ccf_anno_to_sample/ccf_anno_in_sample_space.zarr",
-        "ccf_mesh_to_sample/**/*.obj",  # publish ONLY the warped meshes (.obj);
-                                        # the qc/ overlay png stays results-only (never S3)
+        "ccf_mesh_to_sample/**/*.obj",  # meshes only; the qc/ overlay stays results-only
     ],
     "soma_detection": [
         "soma_locations.csv",
     ],
 }
-# Upstream subfolders whose existing processing.json is merged (read-only) by the manager.
+
+# Upstream subfolders whose existing processing.json is merged (read-only) into the aggregate.
 UPSTREAM_SUBFOLDERS = ("tile_alignment", "fusion", "flatfield_correction", "denoised")
 
+# True dependency edges between the processes this pipeline produces, keyed by
+# DataProcess.name. The manager cannot infer these from the lightweight producer
+# records, so they are set explicitly; edges to a process absent from a given
+# document are dropped (see apply_known_dependencies). Keys must match the records'
+# `name` exactly -- unmatched keys are ignored.
+KNOWN_DEPENDENCIES = {
+    "CCF channel fusion":             ["Image tile alignment"],
+    "Image atlas alignment - 25 um":  ["CCF channel fusion"],
+    "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
+    "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
+    "CCF meshes to sample space":     ["Image atlas alignment - 25 um"],
+    "Proposal generation":            ["Image tile fusing"],
+    "Proposal classification":        ["Proposal generation"],
+    "Soma metrics":                   ["Proposal classification"],
+}
 
-def get_root_s3_prefix(s3_uri, levels_up=1):
-    scheme, bucket_and_key = s3_uri.split("://", 1)
+
+def get_root_s3_prefix(s3_uri: str) -> str:
+    """Return the asset-root S3 prefix (bucket + first key segment) for an input URI."""
+    _, bucket_and_key = s3_uri.split("://", 1)
     bucket, *key_parts = bucket_and_key.split("/")
-    return f"s3://{bucket}/{'/'.join(key_parts[:levels_up])}/"
+    return f"s3://{bucket}/{key_parts[0]}/"
 
 
-def find_brain_id(input_uri):
+def find_brain_id(input_uri: str) -> str:
     m = re.search(r"exaspim_(\d{6})", input_uri.lower())
     if not m:
         raise ValueError(f"Could not extract exaSPIM ID from {input_uri}")
@@ -56,10 +72,9 @@ def find_brain_id(input_uri):
 
 
 def resolve_output(in_base: str) -> str:
-    """Where to WRITE outputs. Reads always come from `in_base` (the input asset,
-    e.g. aind-open-data). When OUTPUT_PREFIX is set (e.g. a scratch test dir
-    s3://aind-scratch-data/exaspim_processing_test), outputs go to
-    {OUTPUT_PREFIX}/<asset_name>/; otherwise alongside the input asset."""
+    """Resolve the write target. Reads always come from `in_base` (the input asset).
+    If OUTPUT_PREFIX is set, outputs go to {OUTPUT_PREFIX}/<asset_name>/ (e.g. a
+    scratch test dir); otherwise alongside the input asset (production)."""
     prefix = os.environ.get("OUTPUT_PREFIX")
     if not prefix:
         return in_base
@@ -67,13 +82,59 @@ def resolve_output(in_base: str) -> str:
     return f"{prefix.rstrip('/')}/{asset_name}/"
 
 
+def _metadata_settings(input_dir: Path, output_dir: Path) -> MetadataSettings:
+    """Shared aind-metadata-manager settings. The pipeline_* fields come from the
+    environment with production defaults; PIPELINE_NAME must match the pipeline_name
+    the producer records carry."""
+    return MetadataSettings(
+        _cli_parse_args=False,
+        input_dir=input_dir,
+        output_dir=output_dir,
+        processor_full_name=os.environ.get("PROCESSOR_FULL_NAME", "AIND Scientific Computing"),
+        pipeline_name=os.environ.get("PIPELINE_NAME", "exaspim-data-processing"),
+        pipeline_version=os.environ.get("PIPELINE_VERSION", "0.0.0"),
+        pipeline_url=os.environ.get(
+            "PIPELINE_URL", "https://codeocean.allenneuraldynamics.org/capsule/9578158/tree"
+        ),
+        aggregate_quality_control=False,  # QC deferred
+        skip_ancillary_files=True,        # ancillary/data_description handled elsewhere
+    )
+
+
+def apply_known_dependencies(processing: Processing) -> Processing:
+    """Replace the manager-inferred dependency_graph with KNOWN_DEPENDENCIES, keeping
+    only edges to processes present in this document. Correct for both the root
+    aggregate and a stage-scoped document (absent upstream processes resolve to [])."""
+    present = {dp.name for dp in processing.data_processes}
+    dg = dict(processing.dependency_graph or {})
+    for name, deps in KNOWN_DEPENDENCIES.items():
+        if name in present:
+            dg[name] = [d for d in deps if d in present]
+    return processing.model_copy(update={"dependency_graph": dg})
+
+
+def ensure_code_provenance(processing: Processing) -> Processing:
+    """Backfill Code.version='unknown' for any process missing both version and
+    commit_hash, so the document stays valid as aind-data-schema moves toward
+    requiring one. Logs what was backfilled to surface the upstream gap."""
+    d = processing.model_dump()
+    patched = []
+    for dp in d.get("data_processes", []):
+        c = dp.get("code") or {}
+        if not c.get("version") and not c.get("commit_hash"):
+            c["version"] = "unknown"
+            dp["code"] = c
+            patched.append(dp.get("name"))
+    if not patched:
+        return processing
+    print(f"  backfilled Code.version='unknown' (missing version/commit_hash): {patched}")
+    return Processing.model_validate(d)
+
+
 def fetch_upstream_metadata(s3_root: str, work: Path, fs: s3fs.S3FileSystem) -> None:
-    """Copy each upstream subfolder's existing processing.json from the asset into
-    the work tree (READ-ONLY) so the manager merges it into the ROOT aggregate.
-    Only *processing.json is fetched -- those existing records are left untouched
-    on S3. Our own producer data_processes (e.g. the CCF-channel fusion record)
-    are NOT read from S3; they arrive via the pipeline's /results channel and are
-    staged separately."""
+    """Copy each upstream subfolder's existing processing.json from the asset into the
+    work tree (read-only) so the manager merges it into the aggregate. Only those
+    files are fetched; they are never rewritten on S3. Never fatal."""
     base = s3_root.rstrip("/")
     for sub in UPSTREAM_SUBFOLDERS:
         try:
@@ -85,12 +146,113 @@ def fetch_upstream_metadata(s3_root: str, work: Path, fs: s3fs.S3FileSystem) -> 
                 (work / sub).mkdir(parents=True, exist_ok=True)
                 fs.get(remote, str(work / sub / os.path.basename(remote)))
                 print(f"  fetched upstream {sub}/{os.path.basename(remote)}")
-            except Exception as e:  # never fatal
+            except Exception as e:
                 print(f"  skip upstream {remote}: {e}")
 
 
+def build_processing_json(work: Path) -> Path:
+    """Aggregate the staged producer + upstream records into the validated root
+    processing.json. Returns the written path."""
+    processing = MetadataManager(_metadata_settings(work, work)).create_processing_metadata()
+    processing = apply_known_dependencies(processing)
+    processing = ensure_code_provenance(processing)
+    processing.write_standard_file(str(work))
+    out = work / "processing.json"
+    print(f"built top-level processing.json ({len(processing.data_processes)} processes): {out}")
+    return out
+
+
+def build_stage_processing_json(stage_src: Path, work_root: Path, out_path: Path):
+    """Build a stage-scoped processing.json from only the *_data_process.json in
+    stage_src, matching the legacy per-subfolder layout (tile_alignment/, fusion/,
+    ... each carry their own record). Returns the path, or None if the stage has no
+    producer records."""
+    dp_files = sorted(stage_src.glob("*_data_process.json"))
+    if not dp_files:
+        print(f"no *_data_process.json in {stage_src}; skipping stage processing.json")
+        return None
+    stage_work = work_root / "_stage" / out_path.parent.name
+    if stage_work.exists():
+        shutil.rmtree(stage_work)
+    stage_work.mkdir(parents=True)
+    for f in dp_files:
+        shutil.copy2(f, stage_work / f.name)
+    processing = MetadataManager(_metadata_settings(stage_work, stage_work)).create_processing_metadata()
+    processing = apply_known_dependencies(processing)
+    processing = ensure_code_provenance(processing)
+    processing.write_standard_file(str(stage_work))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(stage_work / "processing.json", out_path)
+    print(f"built stage processing.json ({len(processing.data_processes)} processes) "
+          f"for {out_path.parent.name}: {out_path}")
+    return out_path
+
+
+def stage_producer_outputs(data_folder: Path, work: Path) -> None:
+    """Copy each producer subfolder (including its *_data_process.json) into the work
+    tree so the manager can aggregate them."""
+    for sub in PUBLISH_WHITELIST:
+        src = data_folder / sub
+        if src.exists():
+            shutil.copytree(src, work / sub, dirs_exist_ok=True)
+
+
+def stage_fusion_metadata(data_folder: Path, work: Path) -> None:
+    """Fold the fusion capsule's data_process (which arrives via the pipeline's
+    /results channel, not S3) into the aggregate. fusion is not in PUBLISH_WHITELIST,
+    so it is aggregated but never republished, and the asset's existing
+    fusion/processing.json is left untouched."""
+    fusion_src = data_folder / "fusion"
+    fusion_dps = list(fusion_src.glob("*_data_process.json")) if fusion_src.exists() else []
+    if not fusion_dps:
+        print("  WARNING: no fusion *_data_process.json in ../data/fusion -- the CCF-channel "
+              "fusion record will be ABSENT from processing.json. Confirm the pipeline passes "
+              "the fusion capsule's /results to this capsule's /data.")
+        return
+    (work / "fusion").mkdir(parents=True, exist_ok=True)
+    for f in fusion_dps:
+        shutil.copy2(f, work / "fusion" / f.name)
+        print(f"  staged fusion data_process for root aggregation: {f.name}")
+
+
+def stage_soma_metadata(data_folder: Path, work: Path) -> None:
+    """Fold the soma-detection records into work/soma_detection/ so they aggregate
+    alongside the soma->CCF soma_locations.csv.
+
+    The detection records mount at SOMA_META_DIR (a separate mount from
+    soma_detection, avoiding a Nextflow input-name collision with the CSV); rglob
+    handles a flat or nested destination. Their pipeline_name is normalized to
+    PIPELINE_NAME because aind-data-schema requires every DataProcess.pipeline_name
+    to be a registered pipeline, and the manager registers only PIPELINE_NAME -- a
+    foreign name (the detection capsule stamps "exaspim-soma-detection") would fail
+    the whole Processing(). Each record is validated up front; the manager silently
+    drops invalid ones, so we warn loudly instead."""
+    soma_meta_dir = os.environ.get("SOMA_META_DIR", "soma_detection_meta")
+    soma_meta_src = data_folder / soma_meta_dir
+    soma_meta_dps = list(soma_meta_src.rglob("*_data_process.json")) if soma_meta_src.exists() else []
+    if not soma_meta_dps:
+        print(f"  WARNING: no soma *_data_process.json in ../data/{soma_meta_dir} -- soma metadata "
+              "will be ABSENT from processing.json. Confirm the pipeline mounts the soma DETECTION "
+              f"capsule's /results at ../data/{soma_meta_dir}.")
+        return
+    (work / "soma_detection").mkdir(parents=True, exist_ok=True)
+    pipeline_name = os.environ.get("PIPELINE_NAME", "exaspim-data-processing")
+    for f in soma_meta_dps:
+        rec = json.loads(f.read_text())
+        orig = rec.get("pipeline_name")
+        rec["pipeline_name"] = pipeline_name
+        (work / "soma_detection" / f.name).write_text(json.dumps(rec, indent=3))
+        try:
+            DataProcess.model_validate(rec)
+            note = "" if orig == pipeline_name else f" (pipeline_name '{orig}' -> '{pipeline_name}')"
+            print(f"  staged soma data_process for aggregation: {f.name}{note}")
+        except Exception as exc:
+            print(f"  WARNING: soma record {f.name} is INVALID and will be DROPPED by the "
+                  f"metadata manager -- fix it in the soma-detection capsule. Reason: {exc}")
+
+
 def stage_curated(src: Path, dst: Path, patterns: list) -> None:
-    """Copy only whitelisted outputs from a producer subfolder into the publish tree."""
+    """Copy only the whitelisted files from a producer subfolder into the publish tree."""
     dst.mkdir(parents=True, exist_ok=True)
     for pat in patterns:
         for match in src.glob(pat):
@@ -103,14 +265,12 @@ def stage_curated(src: Path, dst: Path, patterns: list) -> None:
 
 
 def upload(s3_path: str, local_path: str, fs: s3fs.S3FileSystem, dest_rel: str = "") -> None:
-    """Upload local_path to s3_path/<dest_rel>, preserving the layout deterministically.
+    """Upload local_path to s3_path/<dest_rel>, preserving layout.
 
-    s3fs.put collapses a SINGLE-file directory onto the destination key -- e.g.
-    soma_detection/ holding only soma_locations.csv lands as an object literally
-    named 'soma_detection' (no slash) instead of soma_detection/soma_locations.csv,
-    even with an explicit trailing-slash destination. To defeat that, a directory's
-    TOP-LEVEL files are each uploaded to an explicit key, while sub-directories
-    (e.g. .zarr, which always contain many files) use the fast recursive put.
+    s3fs.put collapses a single-file directory onto the destination key (so a folder
+    holding just one file lands as a slashless object). To avoid that, a directory's
+    top-level files are each put to an explicit key, while sub-directories (e.g.
+    .zarr) use the fast recursive put.
     """
     url = urlparse(s3_path)
     if url.scheme != "s3":
@@ -144,257 +304,51 @@ def update_smartsheet(brain_id, access_token):
     client.client.Sheets.update_rows(client.sheet_id, [row])
 
 
-# Causally-correct dependencies for the processes WE produce (keyed by process
-# name; value = list of upstream process names it depends on). The metadata
-# manager cannot infer real edges from our lightweight data_process records, so
-# it produces a degenerate/incorrect graph; we set the truth explicitly. Only
-# edges we own/understand are encoded -- upstream-internal dependencies are left
-# as the manager produced them, since we don't own those capsules.
-KNOWN_DEPENDENCIES = {
-    "CCF channel fusion":             ["Image tile alignment"],
-    "Image atlas alignment - 25 um":  ["CCF channel fusion"],
-    "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
-    "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
-    "CCF meshes to sample space":      ["Image atlas alignment - 25 um"],
-    # Soma processes (from the soma DETECTION capsule, mounted via SOMA_META_DIR).
-    # Names verified against the actual records (aind-exaspim-soma-detection):
-    # the detector reads the standard fused image ("Image tile fusing"), then
-    # generate -> classify -> metrics. Keys MUST match the records' `name` exactly;
-    # apply_known_dependencies ignores any key not present (non-fatal).
-    "Proposal generation":     ["Image tile fusing"],
-    "Proposal classification": ["Proposal generation"],
-    "Soma metrics":            ["Proposal classification"],
-}
-
-
-def apply_known_dependencies(processing):
-    """Override the manager-inferred dependency_graph with KNOWN_DEPENDENCIES for
-    the processes we produce, keeping only edges to processes present in THIS
-    document. This is correct in both the ROOT aggregate and a stage-scoped doc:
-    e.g. in the ccf_alignment stage, 'CCF channel fusion' is absent, so the 25 um
-    alignment's dependency correctly resolves to []."""
-    present = {dp.name for dp in processing.data_processes}
-    dg = dict(processing.dependency_graph or {})
-    for name, deps in KNOWN_DEPENDENCIES.items():
-        if name in present:
-            dg[name] = [d for d in deps if d in present]
-    return processing.model_copy(update={"dependency_graph": dg})
-
-
-def ensure_code_provenance(processing):
-    """Future-proofing: aind-data-schema warns now (and will eventually REQUIRE)
-    that every Code carries a commit_hash or version. Our own records already set
-    a version; this backfills version='unknown' for any process that arrives with
-    NEITHER (e.g. an incomplete upstream record like 'In-place multiscale
-    generation'), so the published processing.json stays valid once the
-    requirement is enforced. Logs what it backfilled so the upstream gap is
-    visible/actionable. Returns the (possibly re-validated) Processing."""
-    d = processing.model_dump()
-    patched = []
-    for dp in d.get("data_processes", []):
-        c = dp.get("code") or {}
-        if not c.get("version") and not c.get("commit_hash"):
-            c["version"] = "unknown"
-            dp["code"] = c
-            patched.append(dp.get("name"))
-    if not patched:
-        return processing
-    print(f"  backfilled Code.version='unknown' (missing version/commit_hash): {patched}")
-    return Processing.model_validate(d)
-
-
-def build_processing_json(work: Path) -> Path:
-    """Run aind-metadata-manager over `work` to produce the aggregated top-level
-    processing.json (Goal 1). Producers' *_data_process.json + fetched upstream
-    processing.json are merged + validated. Returns the written file path."""
-    settings = MetadataSettings(
-        _cli_parse_args=False,
-        input_dir=work,
-        output_dir=work,
-        processor_full_name=os.environ.get("PROCESSOR_FULL_NAME", "AIND Scientific Computing"),
-        pipeline_name=os.environ.get("PIPELINE_NAME", "exaspim-data-processing"),
-        pipeline_version=os.environ.get("PIPELINE_VERSION", "0.0.0"),
-        pipeline_url=os.environ.get(
-            "PIPELINE_URL", "https://codeocean.allenneuraldynamics.org/capsule/9578158/tree"
-        ),
-        aggregate_quality_control=False,  # QC deferred
-        skip_ancillary_files=True,        # ancillary/data_description handled elsewhere
-    )
-    processing = MetadataManager(settings).create_processing_metadata()
-    processing = apply_known_dependencies(processing)   # fix manager's degenerate graph
-    processing = ensure_code_provenance(processing)     # backfill missing Code.version
-    processing.write_standard_file(str(work))
-    out = work / "processing.json"
-    print(f"built top-level processing.json ({len(processing.data_processes)} processes): {out}")
-    return out
-
-
-def build_stage_processing_json(stage_src: Path, work_root: Path, out_path: Path):
-    """Build a STAGE-SCOPED processing.json from only the *_data_process.json in
-    stage_src (e.g. ccf_alignment), matching the per-subfolder convention where
-    each stage folder carries its own processing record (tile_alignment/,
-    fusion/, ... each have one). The asset-ROOT processing.json
-    (build_processing_json) remains the full aggregated lineage. Returns the
-    written path, or None if the stage has no producer records."""
-    dp_files = sorted(stage_src.glob("*_data_process.json"))
-    if not dp_files:
-        print(f"no *_data_process.json in {stage_src}; skipping stage processing.json")
-        return None
-    stage_work = work_root / "_stage" / out_path.parent.name
-    if stage_work.exists():
-        shutil.rmtree(stage_work)
-    stage_work.mkdir(parents=True)
-    for f in dp_files:
-        shutil.copy2(f, stage_work / f.name)
-    settings = MetadataSettings(
-        _cli_parse_args=False,
-        input_dir=stage_work,
-        output_dir=stage_work,
-        processor_full_name=os.environ.get("PROCESSOR_FULL_NAME", "AIND Scientific Computing"),
-        pipeline_name=os.environ.get("PIPELINE_NAME", "exaspim-data-processing"),
-        pipeline_version=os.environ.get("PIPELINE_VERSION", "0.0.0"),
-        pipeline_url=os.environ.get(
-            "PIPELINE_URL", "https://codeocean.allenneuraldynamics.org/capsule/9578158/tree"
-        ),
-        aggregate_quality_control=False,
-        skip_ancillary_files=True,
-    )
-    processing = MetadataManager(settings).create_processing_metadata()
-    processing = apply_known_dependencies(processing)   # fix manager's degenerate graph (scoped to this stage)
-    processing = ensure_code_provenance(processing)     # backfill missing Code.version
-    processing.write_standard_file(str(stage_work))
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(stage_work / "processing.json", out_path)
-    print(f"built stage processing.json ({len(processing.data_processes)} processes) "
-          f"for {out_path.parent.name}: {out_path}")
-    return out_path
-
-
 def main() -> None:
-    DATA_FOLDER = Path("../data").resolve()
-    RESULTS_FOLDER = Path("../results").resolve()
-    manifest = sorted(DATA_FOLDER.glob("*.json"))[0]
+    data_folder = Path("../data").resolve()
+    results_folder = Path("../results").resolve()
+    manifest = sorted(data_folder.glob("*.json"))[0]
     dataset_config = json.loads(manifest.read_text())
     dataset_path = str(dataset_config["zarr_multiscale"]["input_uri"])
-    in_base = get_root_s3_prefix(dataset_path)        # read inputs from here (aind-open-data)
-    out_base = resolve_output(in_base)                # write outputs here (scratch test dir if set)
+    in_base = get_root_s3_prefix(dataset_path)   # read inputs from here
+    out_base = resolve_output(in_base)            # write outputs here (scratch if OUTPUT_PREFIX set)
     print(f"input asset:   {in_base}")
     print(f"output target: {out_base}")
 
     fs = s3fs.S3FileSystem()
-    work = RESULTS_FOLDER / "_work"
-    pub = RESULTS_FOLDER / "_publish"
+    work = results_folder / "_work"
+    pub = results_folder / "_publish"
     for d in (work, pub):
         if d.exists():
             shutil.rmtree(d)
         d.mkdir(parents=True)
 
-    # 1) stage producer outputs in full (incl. *_data_process.json) for the manager
-    for sub in PUBLISH_WHITELIST:
-        src = DATA_FOLDER / sub
-        if src.exists():
-            shutil.copytree(src, work / sub, dirs_exist_ok=True)
-
-    # 1b) stage the fusion capsule's data_process from /results (passed via the
-    # pipeline) so our CCF-channel fusion appears in the ROOT aggregate. fusion is
-    # NOT in PUBLISH_WHITELIST, so this is aggregated into the root processing.json
-    # but never republished to S3, and the existing fusion/processing.json on S3 is
-    # left untouched. If ../data/fusion/ is absent, the pipeline is not passing the
-    # fusion capsule's /results to upload -> the fusion record will be missing.
-    fusion_src = DATA_FOLDER / "fusion"
-    fusion_dps = list(fusion_src.glob("*_data_process.json")) if fusion_src.exists() else []
-    if fusion_dps:
-        (work / "fusion").mkdir(parents=True, exist_ok=True)
-        for f in fusion_dps:
-            shutil.copy2(f, work / "fusion" / f.name)
-            print(f"  staged fusion data_process for root aggregation: {f.name}")
-    else:
-        print("  WARNING: no fusion *_data_process.json in ../data/fusion -- the CCF-channel "
-              "fusion record will be ABSENT from the root processing.json. Confirm the pipeline "
-              "passes the fusion capsule's /results to the upload capsule's /data.")
-
-    # 1c) soma metadata rides in a SEPARATE mount from the soma_locations.csv. Two
-    # capsules emit a top-level soma_detection/ folder: soma->CCF (capsule-4249884)
-    # produces the canonical soma_locations.csv (with xyz_ccf_auto), and soma
-    # DETECTION (capsule-7525101) produces the soma *_data_process.json records.
-    # They cannot both mount at ../data/soma_detection (Nextflow input-name
-    # collision), so the pipeline mounts the DETECTION connection at
-    # ../data/<SOMA_META_DIR> (default soma_detection_meta). We fold ONLY its
-    # *_data_process.json into work/soma_detection/, so the soma records aggregate
-    # into BOTH the root processing.json and the soma_detection stage processing.json
-    # just as if they had arrived alongside the CSV. The published soma_locations.csv
-    # stays the canonical soma->CCF one (we never copy a CSV from the meta mount).
-    # rglob (recursive) so it finds the records whether the pipeline maps the
-    # connection's destination flat (data/soma_detection_meta/*.json) or nested
-    # (data/soma_detection_meta/soma_detection/*.json) -- robust to how the CO
-    # connection's source/destination paths land.
-    soma_meta_dir = os.environ.get("SOMA_META_DIR", "soma_detection_meta")
-    soma_meta_src = DATA_FOLDER / soma_meta_dir
-    soma_meta_dps = list(soma_meta_src.rglob("*_data_process.json")) if soma_meta_src.exists() else []
-    if soma_meta_dps:
-        (work / "soma_detection").mkdir(parents=True, exist_ok=True)
-        from aind_data_schema.core.processing import DataProcess  # validate, don't silently drop
-        # The soma DETECTION capsule stamps its records with its OWN pipeline_name
-        # ("exaspim-soma-detection"). aind-data-schema requires every
-        # DataProcess.pipeline_name to exist in the aggregated Processing.pipelines,
-        # but the manager registers only ONE pipeline (PIPELINE_NAME) from its
-        # settings -- so a foreign name makes the WHOLE Processing() fail to validate
-        # ("Pipeline name 'exaspim-soma-detection' not found in pipelines list"). We
-        # don't own that capsule, so we normalize the folded records' pipeline_name
-        # to THIS pipeline's name on the way in, matching every other producer record.
-        pipeline_name = os.environ.get("PIPELINE_NAME", "exaspim-data-processing")
-        for f in soma_meta_dps:
-            rec = json.loads(f.read_text())
-            orig = rec.get("pipeline_name")
-            rec["pipeline_name"] = pipeline_name
-            (work / "soma_detection" / f.name).write_text(json.dumps(rec, indent=3))
-            # The metadata manager silently SKIPS records that fail DataProcess
-            # validation (e.g. a process_type that isn't a valid ProcessName enum),
-            # so they'd vanish from processing.json with no trace. Validate here and
-            # warn loudly with the reason so a malformed soma record is visible.
-            try:
-                DataProcess.model_validate(rec)
-                note = "" if orig == pipeline_name else f" (pipeline_name '{orig}' -> '{pipeline_name}')"
-                print(f"  staged soma data_process for aggregation: {f.name}{note}")
-            except Exception as exc:
-                print(f"  WARNING: soma record {f.name} is INVALID and will be DROPPED by the "
-                      f"metadata manager -- fix it in the soma-detection capsule. Reason: {exc}")
-    else:
-        print(f"  WARNING: no soma *_data_process.json in ../data/{soma_meta_dir} -- soma metadata "
-              "will be ABSENT from processing.json. Confirm the pipeline mounts the soma DETECTION "
-              f"capsule's /results at ../data/{soma_meta_dir} (a SEPARATE mount from soma_detection, "
-              "to avoid the input-name collision).")
-
-    # 2) bring in upstream metadata (read-only, from the input asset) so the manager merges it
+    # Stage producer + upstream metadata, then aggregate the root processing.json.
+    stage_producer_outputs(data_folder, work)
+    stage_fusion_metadata(data_folder, work)
+    stage_soma_metadata(data_folder, work)
     fetch_upstream_metadata(in_base, work, fs)
-
-    # 3) Goal 1: aggregate + validate the top-level processing.json
     top = build_processing_json(work)
 
-    # 4) Goal 2: curate the publish set; include the top-level processing.json
+    # Curate the publish tree: whitelisted files + root processing.json + a
+    # stage-scoped processing.json per producer subfolder that emitted records.
     for sub, patterns in PUBLISH_WHITELIST.items():
         if (work / sub).exists():
             stage_curated(work / sub, pub / sub, patterns)
-    # Asset ROOT gets the full aggregated lineage; each published subfolder that
-    # produced its own *_data_process.json gets a STAGE-SCOPED processing.json,
-    # matching the per-subfolder convention (tile_alignment/, fusion/, ... each
-    # carry their own stage record). build_stage_processing_json skips subfolders
-    # with no producer records (e.g. soma_detection), so only the root holds the
-    # aggregate.
     shutil.copy2(top, pub / "processing.json")
     for sub in PUBLISH_WHITELIST:
         if (work / sub).exists():
             build_stage_processing_json(work / sub, work, pub / sub / "processing.json")
 
-    # 5) upload the curated, metadata-complete tree to the OUTPUT target
+    # Upload the curated tree to the output target.
     for sub in PUBLISH_WHITELIST:
         if (pub / sub).exists():
             upload(out_base, str(pub / sub), fs, dest_rel=sub)
     upload(out_base, str(pub / "processing.json"), fs, dest_rel="processing.json")
 
-    (RESULTS_FOLDER / "finished_registration.txt").write_text(out_base)
+    (results_folder / "finished_registration.txt").write_text(out_base)
 
-    token = os.environ.get("SMARTSHEET_TOKEN")  # was hard-coded — moved to a secret
+    token = os.environ.get("SMARTSHEET_TOKEN")
     if token:
         update_smartsheet(find_brain_id(dataset_path), token)
 
