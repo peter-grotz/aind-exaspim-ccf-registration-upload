@@ -46,6 +46,15 @@ UPSTREAM_SUBFOLDERS = ("tile_alignment", "fusion", "flatfield_correction", "deno
 # document are dropped (see apply_known_dependencies). Keys must match the records'
 # `name` exactly -- unmatched keys are ignored.
 KNOWN_DEPENDENCIES = {
+    # Upstream preprocessing edges, included only where supported by evidence
+    # (explicit input_data and/or run timing). Edges resting on nothing but a
+    # weeks-apart timestamp are intentionally omitted -- so 'Image tile alignment'
+    # and 'Whole brain masking' stay roots, and we do NOT assert a flat-field ->
+    # tile-alignment edge or a flat-field -> CCF channel fusion edge.
+    "In-place multiscale generation": ["Inference dispatch"],   # timing + dispatch-metadata ref
+    "Image flat-field correction":    ["Inference dispatch"],   # input_data = denoised/SPIM.ome.zarr
+    "Image tile fusing":              ["Image tile alignment"],  # timing (alignment then fusing)
+    # Processes this pipeline produces.
     "CCF channel fusion":             ["Image tile alignment"],
     "Image atlas alignment - 25 um":  ["CCF channel fusion"],
     "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
