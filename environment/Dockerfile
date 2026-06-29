@@ -6,11 +6,6 @@
 ARG REGISTRY_HOST
 FROM $REGISTRY_HOST/codeocean/mambaforge3:23.1.0-4-python3.10.12-ubuntu22.04
 
-# === TEMPORARY (TEST) — REMOVE BEFORE PRODUCTION ===
-# Write all outputs to the scratch test dir instead of the aind-open-data asset;
-# upstream metadata is still read from aind-open-data. Delete to restore production.
-ENV OUTPUT_PREFIX=s3://aind-scratch-data/exaspim_processing_test
-
 ARG DEBIAN_FRONTEND=noninteractive
 ARG AWS_ACCESS_KEY_ID
 ARG AWS_DEFAULT_REGION
