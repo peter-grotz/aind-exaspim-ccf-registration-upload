@@ -24,17 +24,17 @@ versions), curates the publish set, and uploads to S3.
 - Upstream `processing.json` is read from the input asset on S3.
 - **AWS credentials** with S3 read (input asset) + write (output target).
 
+Outputs are always published back to the input asset on `aind-open-data` (the
+prefix the manifest's `input_uri` points at) — there is no scratch/test target.
+
 ## Environment variables
-- `OUTPUT_PREFIX` *(optional)* — if set, publishes to
-  `<OUTPUT_PREFIX>/<asset>/` (scratch test dir); if unset, to the `aind-open-data`
-  asset (production).
 - `PIPELINE_NAME` (default `exaspim-data-processing`), `PIPELINE_VERSION`,
   `PIPELINE_URL`, `PROCESSOR_FULL_NAME` — stamped into `processing.json`.
   `PIPELINE_NAME` **must match** the `pipeline_name` the producers emit.
 - `SMARTSHEET_TOKEN` *(optional)* — if set, updates the tracking sheet; leave
   unset for tests.
 
-## Outputs (to the resolved S3 target)
+## Outputs (to the input asset on aind-open-data)
 - `processing.json` — full aggregated lineage (asset root).
 - `ccf_alignment/` — whitelisted transforms + zarr + `ccf_anno_to_sample/` +
   a stage-scoped `processing.json`.
