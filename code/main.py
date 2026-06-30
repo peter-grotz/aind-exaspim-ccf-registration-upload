@@ -3,10 +3,8 @@ Upload capsule for the exaSPIM CCF-registration + soma-reg pipeline.
 
 Aggregates the pipeline's producer and upstream metadata into a single validated
 top-level ``processing.json`` (via ``aind-metadata-manager`` on aind-data-schema
-v2) and publishes the curated subset of results to the asset's S3 location.
-
-Output bucket is environment-driven: production writes to the input asset
-(aind-open-data); setting ``OUTPUT_PREFIX`` redirects writes to a scratch dir.
+v2) and publishes the curated subset of results back to the input asset on
+aind-open-data (the same prefix the manifest's input_uri points at).
 """
 
 from datetime import datetime
@@ -46,6 +44,15 @@ UPSTREAM_SUBFOLDERS = ("tile_alignment", "fusion", "flatfield_correction", "deno
 # document are dropped (see apply_known_dependencies). Keys must match the records'
 # `name` exactly -- unmatched keys are ignored.
 KNOWN_DEPENDENCIES = {
+    # Upstream preprocessing edges, included only where supported by evidence
+    # (explicit input_data and/or run timing). Edges resting on nothing but a
+    # weeks-apart timestamp are intentionally omitted -- so 'Image tile alignment'
+    # and 'Whole brain masking' stay roots, and we do NOT assert a flat-field ->
+    # tile-alignment edge or a flat-field -> CCF channel fusion edge.
+    "In-place multiscale generation": ["Inference dispatch"],   # timing + dispatch-metadata ref
+    "Image flat-field correction":    ["Inference dispatch"],   # input_data = denoised/SPIM.ome.zarr
+    "Image tile fusing":              ["Image tile alignment"],  # timing (alignment then fusing)
+    # Processes this pipeline produces.
     "CCF channel fusion":             ["Image tile alignment"],
     "Image atlas alignment - 25 um":  ["CCF channel fusion"],
     "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
@@ -69,17 +76,6 @@ def find_brain_id(input_uri: str) -> str:
     if not m:
         raise ValueError(f"Could not extract exaSPIM ID from {input_uri}")
     return m.group(1)
-
-
-def resolve_output(in_base: str) -> str:
-    """Resolve the write target. Reads always come from `in_base` (the input asset).
-    If OUTPUT_PREFIX is set, outputs go to {OUTPUT_PREFIX}/<asset_name>/ (e.g. a
-    scratch test dir); otherwise alongside the input asset (production)."""
-    prefix = os.environ.get("OUTPUT_PREFIX")
-    if not prefix:
-        return in_base
-    asset_name = in_base.rstrip("/").split("/")[-1]
-    return f"{prefix.rstrip('/')}/{asset_name}/"
 
 
 def _metadata_settings(input_dir: Path, output_dir: Path) -> MetadataSettings:
@@ -310,8 +306,8 @@ def main() -> None:
     manifest = sorted(data_folder.glob("*.json"))[0]
     dataset_config = json.loads(manifest.read_text())
     dataset_path = str(dataset_config["zarr_multiscale"]["input_uri"])
-    in_base = get_root_s3_prefix(dataset_path)   # read inputs from here
-    out_base = resolve_output(in_base)            # write outputs here (scratch if OUTPUT_PREFIX set)
+    # Read inputs from, and publish outputs back to, the SAME asset on aind-open-data.
+    in_base = out_base = get_root_s3_prefix(dataset_path)
     print(f"input asset:   {in_base}")
     print(f"output target: {out_base}")
 
