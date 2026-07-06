@@ -7,12 +7,10 @@ v2) and publishes the curated subset of results back to the input asset on
 aind-open-data (the same prefix the manifest's input_uri points at).
 """
 
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 import json
 import os
-import re
 import shutil
 
 import s3fs
@@ -69,13 +67,6 @@ def get_root_s3_prefix(s3_uri: str) -> str:
     _, bucket_and_key = s3_uri.split("://", 1)
     bucket, *key_parts = bucket_and_key.split("/")
     return f"s3://{bucket}/{key_parts[0]}/"
-
-
-def find_brain_id(input_uri: str) -> str:
-    m = re.search(r"exaspim_(\d{6})", input_uri.lower())
-    if not m:
-        raise ValueError(f"Could not extract exaSPIM ID from {input_uri}")
-    return m.group(1)
 
 
 def _metadata_settings(input_dir: Path, output_dir: Path) -> MetadataSettings:
@@ -288,18 +279,6 @@ def upload(s3_path: str, local_path: str, fs: s3fs.S3FileSystem, dest_rel: str =
         fs.put(str(p), key)
 
 
-def update_smartsheet(brain_id, access_token):
-    from aind_exaspim_dataset_utils.smartsheet_util import SmartSheetClient
-    client = SmartSheetClient(access_token, "ExM Dataset Summary")
-    column_map = {col.title: col.id for col in client.sheet.columns}
-    row = client.client.models.Row()
-    row.id = client.find_row_id(brain_id)
-    row.cells.append({"column_id": column_map.get("CCF Registered"), "value": True, "strict": False})
-    row.cells.append({"column_id": column_map.get("Affine Registration Date"),
-                      "value": datetime.today().strftime("%m/%d/%Y"), "strict": False})
-    client.client.Sheets.update_rows(client.sheet_id, [row])
-
-
 def main() -> None:
     data_folder = Path("../data").resolve()
     results_folder = Path("../results").resolve()
@@ -343,10 +322,6 @@ def main() -> None:
     upload(out_base, str(pub / "processing.json"), fs, dest_rel="processing.json")
 
     (results_folder / "finished_registration.txt").write_text(out_base)
-
-    token = os.environ.get("SMARTSHEET_TOKEN")
-    if token:
-        update_smartsheet(find_brain_id(dataset_path), token)
 
 
 if __name__ == "__main__":
