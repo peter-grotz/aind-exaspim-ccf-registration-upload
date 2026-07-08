@@ -52,6 +52,7 @@ KNOWN_DEPENDENCIES = {
     "Image tile fusing":              ["Image tile alignment"],  # timing (alignment then fusing)
     # Processes this pipeline produces.
     "CCF channel fusion":             ["Image tile alignment"],
+    "Brain mask fusion":              ["CCF channel fusion"],
     "Image atlas alignment - 25 um":  ["CCF channel fusion"],
     "Image atlas alignment - 10 um":  ["Image atlas alignment - 25 um"],
     "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
@@ -238,6 +239,26 @@ def stage_soma_metadata(data_folder: Path, work: Path) -> None:
                   f"metadata manager -- fix it in the soma-detection capsule. Reason: {exc}")
 
 
+def stage_mask_fusion_metadata(data_folder: Path, work: Path) -> None:
+    """Fold the brain-mask fusion capsule's data_process into work/fusion so it
+    aggregates alongside the CCF-channel fusion record.
+
+    The mask record mounts at MASK_META_DIR (a separate mount from fusion, avoiding
+    a Nextflow input-name collision with the CCF fusion record)."""
+    mask_meta_dir = os.environ.get("MASK_META_DIR", "mask_fusion")
+    mask_src = data_folder / mask_meta_dir
+    mask_dps = list(mask_src.rglob("*_data_process.json")) if mask_src.exists() else []
+    if not mask_dps:
+        print(f"  WARNING: no mask *_data_process.json in ../data/{mask_meta_dir} -- the brain-mask "
+              "fusion record will be ABSENT from processing.json. Confirm the pipeline mounts the "
+              f"aind-exaspim-mask-fusion capsule's /results at ../data/{mask_meta_dir}.")
+        return
+    (work / "fusion").mkdir(parents=True, exist_ok=True)
+    for f in mask_dps:
+        shutil.copy2(f, work / "fusion" / f.name)
+        print(f"  staged mask fusion data_process for root aggregation: {f.name}")
+
+
 def stage_curated(src: Path, dst: Path, patterns: list) -> None:
     """Copy only the whitelisted files from a producer subfolder into the publish tree."""
     dst.mkdir(parents=True, exist_ok=True)
@@ -301,6 +322,7 @@ def main() -> None:
     # Stage producer + upstream metadata, then aggregate the root processing.json.
     stage_producer_outputs(data_folder, work)
     stage_fusion_metadata(data_folder, work)
+    stage_mask_fusion_metadata(data_folder, work)
     stage_soma_metadata(data_folder, work)
     fetch_upstream_metadata(in_base, work, fs)
     top = build_processing_json(work)
