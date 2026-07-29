@@ -64,10 +64,72 @@ KNOWN_DEPENDENCIES = {
 
 
 def get_root_s3_prefix(s3_uri: str) -> str:
-    """Return the asset-root S3 prefix (bucket + first key segment) for an input URI."""
-    _, bucket_and_key = s3_uri.split("://", 1)
+    """Return the asset-root S3 prefix (bucket + first key segment) for an input URI.
+
+    Validated, because this prefix is this capsule's WRITE target -- it is where
+    processing.json and the whole ccf_alignment/ tree are PUT. The unchecked version
+    resolved "s3://bucket//asset/..." (one stray slash) and "s3://bucket/" alike to
+    "s3://bucket//", i.e. the root of a shared production bucket, and fs.put would
+    happily publish this run's outputs there.
+    """
+    if "://" not in s3_uri:
+        raise ValueError(f"input_uri is not an s3:// URI: {s3_uri!r}")
+    scheme, bucket_and_key = s3_uri.split("://", 1)
+    if scheme != "s3":
+        raise ValueError(f"input_uri has unsupported scheme {scheme!r}: {s3_uri!r}")
     bucket, *key_parts = bucket_and_key.split("/")
+    if not bucket:
+        raise ValueError(f"input_uri has no bucket: {s3_uri!r}")
+    if not key_parts or not key_parts[0]:
+        raise ValueError(
+            f"input_uri has no asset segment: {s3_uri!r} -- the publish target would "
+            f"resolve to the root of s3://{bucket}/")
     return f"s3://{bucket}/{key_parts[0]}/"
+
+
+def _process_names(doc: dict) -> set:
+    """DataProcess names in a processing document, under either schema version.
+
+    Plain dict access rather than Processing.model_validate: this has to be able to
+    read a v1 document, which the v2 validator rejects outright.
+    """
+    dps = (doc.get("data_processes")
+           or (doc.get("processing_pipeline") or {}).get("data_processes")
+           or [])
+    return {str(d.get("name")) for d in dps if isinstance(d, dict) and d.get("name")}
+
+
+def root_overwrite_is_safe(s3_root: str, new_top: Path, fs: s3fs.S3FileSystem) -> bool:
+    """True if publishing `new_top` over the asset's root processing.json loses nothing.
+
+    fetch_upstream_metadata reads the four producer SUBFOLDER documents but never the
+    asset's own root processing.json, which is then PUT over unread. Any process
+    recorded only there -- an upstream stage that writes no subfolder document, or a v1
+    document the v2 validator dropped with just a warning -- is silently erased.
+
+    Rather than guess at a merge, compare process names and let the caller skip the
+    overwrite when records would be lost. Never fatal: an unreadable or absent root
+    document is not a reason to withhold this run's metadata.
+    """
+    remote = f"{s3_root.rstrip('/')}/processing.json"
+    try:
+        if not fs.exists(remote):
+            return True
+        existing = json.loads(fs.cat(remote))
+    except Exception as e:
+        print(f"  could not read existing {remote} ({e}); publishing the new aggregate")
+        return True
+    try:
+        new_names = _process_names(json.loads(new_top.read_text()))
+    except Exception as e:
+        print(f"  could not parse the new aggregate ({e}); publishing it")
+        return True
+    lost = _process_names(existing) - new_names
+    if lost:
+        print(f"  WARNING: the existing root processing.json records "
+              f"{len(lost)} process(es) the new aggregate does not: {sorted(lost)}")
+        return False
+    return True
 
 
 def _metadata_settings(input_dir: Path, output_dir: Path) -> MetadataSettings:
@@ -341,7 +403,17 @@ def main() -> None:
     for sub in PUBLISH_WHITELIST:
         if (pub / sub).exists():
             upload(out_base, str(pub / sub), fs, dest_rel=sub)
-    upload(out_base, str(pub / "processing.json"), fs, dest_rel="processing.json")
+    # The root processing.json is the one file here that overwrites something we did not
+    # read. Publish it only when doing so loses no existing records; otherwise leave the
+    # asset's document alone and say so loudly. The whitelisted outputs above are
+    # published either way -- a metadata disagreement must not withhold the science.
+    if root_overwrite_is_safe(in_base, pub / "processing.json", fs):
+        upload(out_base, str(pub / "processing.json"), fs, dest_rel="processing.json")
+    else:
+        print(f"  NOT publishing root processing.json: it would drop records from the "
+              f"existing {in_base.rstrip('/')}/processing.json. The aggregate is in "
+              f"/results/_publish/processing.json for inspection; merge it by hand or "
+              f"add the missing producer to UPSTREAM_SUBFOLDERS.")
 
     (results_folder / "finished_registration.txt").write_text(out_base)
 
