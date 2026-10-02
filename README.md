@@ -28,7 +28,7 @@ The last stage of Code Ocean pipeline `9578158`.
 
 | Path | From |
 |---|---|
-| `<manifest>.json` | `cp_jsons` — exactly one JSON with `zarr_multiscale.input_uri` |
+| `exaspim_manifest.json` | the run's manifest from `cp_jsons`, passed on by registration (override with `--manifest`) |
 | `ccf_alignment/` | registration: outputs and records |
 | `soma_detection/` | soma→CCF: `soma_locations.csv` |
 | `soma_detection_meta/` | soma detection: records (`SOMA_META_DIR`) |

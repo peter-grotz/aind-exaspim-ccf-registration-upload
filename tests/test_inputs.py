@@ -4,7 +4,7 @@ import json
 
 import pytest
 from conftest import BUCKET, make_asset
-from upload_capsule.inputs import InputError, asset_from_manifest, find_manifest, subject_id
+from upload_capsule.inputs import InputError, asset_from_manifest, subject_id
 
 
 def _manifest(path, uri):
@@ -12,19 +12,15 @@ def _manifest(path, uri):
     return path
 
 
-def test_the_manifest_is_found_among_other_json(tmp_path):
-    (tmp_path / "a_other.json").write_text('{"x": 1}')
-    (tmp_path / "broken.json").write_text("{")
-    manifest = _manifest(tmp_path / "z_manifest.json", "s3://b/d/fused.zarr")
-    assert find_manifest(tmp_path) == manifest
+def test_a_missing_manifest_is_named(tmp_path):
+    with pytest.raises(InputError, match="No manifest"):
+        asset_from_manifest(tmp_path / "exaspim_manifest.json")
 
 
-@pytest.mark.parametrize("count", [0, 2])
-def test_anything_but_one_manifest_is_refused(tmp_path, count):
-    for i in range(count):
-        _manifest(tmp_path / f"m{i}.json", "s3://b/d/fused.zarr")
-    with pytest.raises(InputError, match=f"found {count}"):
-        find_manifest(tmp_path)
+def test_a_manifest_without_an_input_uri_is_refused(tmp_path):
+    (tmp_path / "m.json").write_text('{"zarr_multiscale": {}}')
+    with pytest.raises(InputError, match="input_uri"):
+        asset_from_manifest(tmp_path / "m.json")
 
 
 @pytest.mark.parametrize(

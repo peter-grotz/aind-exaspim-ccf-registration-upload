@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+MANIFEST = "exaspim_manifest.json"
+"""Name the registration capsule gives the run's manifest when it passes it on."""
+
 SUBJECT_FILES = ("subject.json", "data_description.json")
 """Files at the asset root that name its subject, in the order tried."""
 
@@ -41,43 +44,6 @@ class Asset:
         return f"s3://{self.root}/"
 
 
-def find_manifest(data_dir: Path) -> Path:
-    """Find the one manifest under ``data_dir``.
-
-    A manifest is a top-level JSON file with ``zarr_multiscale.input_uri``. Other JSON
-    files may be mounted beside it, so the first file found is not assumed to be it.
-
-    Parameters
-    ----------
-    data_dir : Path
-        The capsule's ``/data``.
-
-    Returns
-    -------
-    Path
-        The manifest.
-
-    Raises
-    ------
-    InputError
-        If there is no manifest, or more than one.
-    """
-    found = []
-    for path in sorted(data_dir.glob("*.json")):
-        try:
-            document = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(document, dict) and (document.get("zarr_multiscale") or {}).get("input_uri"):
-            found.append(path)
-    if len(found) != 1:
-        raise InputError(
-            f"Expected one manifest with zarr_multiscale.input_uri in {data_dir}, "
-            f"found {len(found)}: {[p.name for p in found]}"
-        )
-    return found[0]
-
-
 def asset_from_manifest(manifest: Path) -> Asset:
     """Read the target asset from the manifest's ``input_uri``.
 
@@ -94,9 +60,17 @@ def asset_from_manifest(manifest: Path) -> Asset:
     Raises
     ------
     InputError
-        If the URI is not an ``s3://`` URI with a key.
+        If the manifest is missing, names no ``input_uri``, or the URI is not an
+        ``s3://`` URI with a key.
     """
-    uri = json.loads(manifest.read_text(encoding="utf-8"))["zarr_multiscale"]["input_uri"]
+    if not manifest.is_file():
+        raise InputError(
+            f"No manifest at {manifest}; the registration capsule passes it on as {MANIFEST}"
+        )
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    uri = (document.get("zarr_multiscale") or {}).get("input_uri")
+    if not uri:
+        raise InputError(f"{manifest} has no zarr_multiscale.input_uri")
     parsed = urlparse(str(uri))
     key = parsed.path.lstrip("/")
     if parsed.scheme != "s3" or not parsed.netloc or not key:

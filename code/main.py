@@ -21,7 +21,7 @@ from pathlib import Path
 
 from upload_capsule import metadata, publish
 from upload_capsule.config import REQUIRED_PROCESSES, STAGES, UPSTREAM_SUBFOLDERS, pipeline_from_env
-from upload_capsule.inputs import Asset, InputError, asset_from_manifest, find_manifest, subject_id
+from upload_capsule.inputs import MANIFEST, Asset, InputError, asset_from_manifest, subject_id
 from upload_capsule.metadata import MetadataError
 
 logger = logging.getLogger("upload")
@@ -35,12 +35,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--data-dir", type=Path, default=Path("../data"))
     parser.add_argument("--results-dir", type=Path, default=Path("../results"))
     parser.add_argument(
+        "--manifest", type=Path, help=f"The run's manifest (default: <data-dir>/{MANIFEST})."
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         default=os.environ.get("DRY_RUN", "").strip().lower() in TRUE,
         help="Build and curate everything into /results, but write nothing to the asset.",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    args.manifest = args.manifest or args.data_dir / MANIFEST
+    return args
 
 
 def fetch_upstream(fs, asset: Asset, destination: Path) -> list[Path]:
@@ -87,7 +92,7 @@ def run(args: argparse.Namespace, fs) -> int:
         Process exit status.
     """
     pipeline = pipeline_from_env()
-    asset = asset_from_manifest(find_manifest(args.data_dir))
+    asset = asset_from_manifest(args.manifest)
     logger.info("Asset: %s", asset.uri)
     token = os.environ.get("SMARTSHEET_TOKEN", "")
     # Resolved before anything is published, so a missing subject cannot fail the run

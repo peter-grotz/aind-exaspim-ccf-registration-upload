@@ -49,7 +49,6 @@ def make_data(data: Path, asset_name: str, records: bool = True) -> Path:
             {"zarr_multiscale": {"input_uri": f"s3://{BUCKET}/{asset_name}/fusion/fused.zarr"}}
         )
     )
-    (data / "unrelated.json").write_text('{"not": "a manifest"}')
     if records:
         for stage, mount in (
             ("ccf_alignment", "ccf_alignment"),
