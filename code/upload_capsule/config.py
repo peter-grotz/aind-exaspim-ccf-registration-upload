@@ -70,12 +70,10 @@ STAGES = (
 )
 
 DEPENDENCIES: dict[str, list[str]] = {
-    # Upstream preprocessing, where supported by evidence (explicit input_data or run
-    # timing). Edges resting only on timestamps weeks apart are left out, so 'Image tile
-    # alignment' and 'Whole brain masking' stay roots.
-    "In-place multiscale generation": ["Inference dispatch"],
+    # Upstream preprocessing records arrive without a graph. Only an edge backed by a
+    # recorded input is added: flat-field correction's input_data is the denoised output.
+    # Edges that would rest on run timing alone are left for the upstream owners to record.
     "Image flat-field correction": ["Inference dispatch"],
-    "Image tile fusing": ["Image tile alignment"],
     # This pipeline.
     "CCF channel fusion": ["Image tile alignment"],
     "Image atlas alignment - 25 um": ["CCF channel fusion"],

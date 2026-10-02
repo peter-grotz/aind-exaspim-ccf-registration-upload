@@ -67,14 +67,23 @@ def test_a_record_without_a_dependency_entry_fails(tmp_path):
         metadata.build_processing(records, [], tmp_path / "w", PIPELINE, dependencies={})
 
 
-def test_the_document_reproduces_the_published_841260_one(tmp_path):
+def test_the_document_matches_the_published_841260_one(tmp_path):
     root = _root(tmp_path)
     published = json.loads((RESOURCES / "published_root.json").read_text())
     assert sorted(p.name for p in root.data_processes) == sorted(
         p["name"] for p in published["data_processes"]
     )
-    assert root.dependency_graph == published["dependency_graph"]
+    # Published before the timing-only upstream edge was dropped.
+    expected = {**published["dependency_graph"], "In-place multiscale generation": []}
+    assert root.dependency_graph == expected
     assert [p.name for p in root.pipelines] == ["exaspim-data-processing"]
+
+
+def test_only_evidence_backed_upstream_edges_are_added(tmp_path):
+    graph = _root(tmp_path).dependency_graph
+    assert graph["Image flat-field correction"] == ["Inference dispatch"]
+    assert graph["In-place multiscale generation"] == []
+    assert graph["Image tile fusing"] == []
 
 
 def test_edges_between_stages_are_set(tmp_path):
