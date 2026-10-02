@@ -6,8 +6,7 @@
    upstream ``processing.json`` files into the root document (see
    :mod:`upload_capsule.metadata`).
 3. Curate each publishing stage's files and its stage document.
-4. Unless ``--dry-run``: archive the asset's current root ``processing.json`` to
-   ``original_metadata/`` and upload the curated tree to the asset.
+4. Unless ``--dry-run``, upload the curated tree to the asset.
 5. If ``SMARTSHEET_TOKEN`` is set, mark the subject registered.
 """
 
@@ -152,9 +151,6 @@ def run(args: argparse.Namespace, fs) -> int:
         )
         return 0
 
-    archived = publish.archive_existing(fs, asset.root, "processing.json")
-    if archived:
-        logger.info("Archived the previous processing.json to %s", archived)
     count = publish.upload_tree(fs, publish_root, asset.root)
     logger.info("Uploaded %d files to %s", count, asset.uri)
     (args.results_dir / "finished_registration.txt").write_text(asset.uri, encoding="utf-8")

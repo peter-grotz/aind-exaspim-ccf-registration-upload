@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import logging
 import shutil
-from datetime import date, datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-ARCHIVE_DIR = "original_metadata"
 
 
 def curate(source: Path, destination: Path, patterns: tuple[str, ...]) -> list[Path]:
@@ -69,38 +66,3 @@ def upload_tree(fs, local_root: Path, remote_root: str) -> int:
     remote = [f"{remote_root.rstrip('/')}/{p.relative_to(local_root).as_posix()}" for p in files]
     fs.put([str(p) for p in files], remote)
     return len(files)
-
-
-def archive_existing(fs, asset_root: str, filename: str, today: date | None = None) -> str | None:
-    """Keep the asset's current ``filename`` under ``original_metadata/`` before replacing it.
-
-    Follows the AIND convention ``original_metadata/<stem>.<YYYYMMDD>.json``. An archive
-    already written today is left as it is, so a re-run keeps the version from before the
-    first run of the day.
-
-    Parameters
-    ----------
-    fs : fsspec.AbstractFileSystem
-        The asset's filesystem.
-    asset_root : str
-        ``<bucket>/<name>``.
-    filename : str
-        A core metadata file at the asset root, e.g. ``processing.json``.
-    today : date | None, optional
-        Archive date; defaults to today in UTC.
-
-    Returns
-    -------
-    str | None
-        The archive path, or ``None`` when there was nothing to archive.
-    """
-    current = f"{asset_root}/{filename}"
-    if not fs.exists(current):
-        return None
-    stem = filename.rsplit(".", 1)[0]
-    archive = f"{asset_root}/{ARCHIVE_DIR}/{stem}.{(today or datetime.now(timezone.utc).date()):%Y%m%d}.json"
-    if fs.exists(archive):
-        logger.info("Archive %s already exists; keeping it", archive)
-        return archive
-    fs.copy(current, archive)
-    return archive

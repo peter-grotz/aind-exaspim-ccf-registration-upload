@@ -21,8 +21,7 @@ The last stage of Code Ocean pipeline `9578158`.
 3. **Checks before publishing.** An invalid record, a record with no `DEPENDENCIES` entry,
    or a missing atlas alignment fails the run with nothing written.
 4. **Publishes** each stage's whitelisted files and stage `processing.json`, and the root
-   `processing.json`. The asset's previous root `processing.json` is first kept as
-   `original_metadata/processing.<YYYYMMDD>.json`.
+   `processing.json`, replacing what is there.
 5. **Updates the tracking sheet** when `SMARTSHEET_TOKEN` is set.
 
 ## Inputs (`/data`)

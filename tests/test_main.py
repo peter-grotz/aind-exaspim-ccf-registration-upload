@@ -28,7 +28,7 @@ def test_a_dry_run_writes_nothing_to_the_asset(s3, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("name", [NAME, "823507_2026-06-30_16-49-27_processed_2026-08-31_10-32-14"])
-def test_a_run_publishes_and_archives(s3, tmp_path, monkeypatch, name):
+def test_a_run_publishes(s3, tmp_path, monkeypatch, name):
     monkeypatch.delenv("SMARTSHEET_TOKEN", raising=False)
     make_asset(s3, name)
     make_data(tmp_path / "data", name)
@@ -40,7 +40,7 @@ def test_a_run_publishes_and_archives(s3, tmp_path, monkeypatch, name):
     assert s3.isfile(f"{base}/soma_detection/processing.json")
     assert not s3.exists(f"{base}/ccf_fusion")
     assert json.loads(s3.cat(f"{base}/processing.json"))["dependency_graph"]
-    assert len(s3.glob(f"{base}/original_metadata/processing.*.json")) == 1
+    assert not s3.exists(f"{base}/original_metadata")
     assert (tmp_path / "results" / "finished_registration.txt").read_text() == f"s3://{base}/"
 
 
