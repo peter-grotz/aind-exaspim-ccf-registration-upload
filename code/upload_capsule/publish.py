@@ -1,0 +1,68 @@
+"""Curate the publish tree and write it to the asset."""
+
+from __future__ import annotations
+
+import logging
+import shutil
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def curate(source: Path, destination: Path, patterns: tuple[str, ...]) -> list[Path]:
+    """Copy the files matching ``patterns`` from ``source`` into ``destination``.
+
+    Parameters
+    ----------
+    source : Path
+        A stage's output directory.
+    destination : Path
+        Where the published copy is assembled.
+    patterns : tuple[str, ...]
+        Globs relative to ``source``. A matched directory (a zarr) is copied whole.
+
+    Returns
+    -------
+    list[Path]
+        What was copied, relative to ``destination``.
+    """
+    copied = []
+    for pattern in patterns:
+        for match in sorted(source.glob(pattern)):
+            target = destination / match.relative_to(source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if match.is_dir():
+                shutil.copytree(match, target, dirs_exist_ok=True)
+            else:
+                shutil.copy2(match, target)
+            copied.append(target.relative_to(destination))
+    return copied
+
+
+def upload_tree(fs, local_root: Path, remote_root: str) -> int:
+    """Upload every file under ``local_root`` to the same relative key under ``remote_root``.
+
+    Files are sent as one explicit list of local and remote paths. A recursive ``put`` of
+    a directory holding a single file collapses it onto the destination key, losing the
+    folder; explicit pairs avoid that and still upload concurrently.
+
+    Parameters
+    ----------
+    fs : fsspec.AbstractFileSystem
+        Destination filesystem.
+    local_root : Path
+        The curated tree.
+    remote_root : str
+        ``<bucket>/<prefix>`` to write under.
+
+    Returns
+    -------
+    int
+        Number of files uploaded.
+    """
+    files = sorted(p for p in local_root.rglob("*") if p.is_file())
+    if not files:
+        return 0
+    remote = [f"{remote_root.rstrip('/')}/{p.relative_to(local_root).as_posix()}" for p in files]
+    fs.put([str(p) for p in files], remote)
+    return len(files)

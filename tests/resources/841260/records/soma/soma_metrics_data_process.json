@@ -1,0 +1,38 @@
+{
+  "code": {
+    "commit_hash": null,
+    "container": null,
+    "core_dependency": null,
+    "input_data": null,
+    "language": "Python",
+    "language_version": null,
+    "name": "aind-exaspim-soma-detection",
+    "object_type": "Code",
+    "parameters": {
+      "multiscale": 2,
+      "output_dir": "../results/soma_detection/",
+      "patch_shape": [
+        36,
+        36,
+        36
+      ],
+      "save_swcs": true
+    },
+    "run_script": "/code/run",
+    "url": "https://github.com/AllenNeuralDynamics/aind-exaspim-soma-detection.git",
+    "version": "0.0.1"
+  },
+  "end_date_time": "2026-07-31T00:56:31.933866Z",
+  "experimenters": [
+    "Anna Grim"
+  ],
+  "name": "Soma metrics",
+  "notes": "Estimates soma radii by fitting an ellipsoid and computes soma brightness",
+  "output_parameters": null,
+  "output_path": "soma_detection",
+  "pipeline_name": "exaspim-data-processing",
+  "process_type": "Image cell quantification",
+  "resources": null,
+  "stage": "Processing",
+  "start_date_time": "2026-07-30T23:52:00.020394Z"
+}

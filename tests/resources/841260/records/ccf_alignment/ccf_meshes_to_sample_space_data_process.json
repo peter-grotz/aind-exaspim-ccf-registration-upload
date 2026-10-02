@@ -1,0 +1,60 @@
+{
+  "code": {
+    "commit_hash": null,
+    "container": null,
+    "core_dependency": null,
+    "input_data": null,
+    "language": "Python",
+    "language_version": null,
+    "name": "aind-exaspim-ccf-registration",
+    "object_type": "Code",
+    "parameters": {
+      "ccf_to_template_fwd": [
+        "/data/reg_exaspim_template_to_ccf_25um_v1.4/1Warp.nii.gz",
+        "/data/reg_exaspim_template_to_ccf_25um_v1.4/0GenericAffine.mat"
+      ],
+      "direction": "reg-FWD(C->T) then SyN-FWD(T->S), two-stage points",
+      "inv_flips": [
+        0,
+        2,
+        1
+      ],
+      "inv_swaps": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "mesh_units_um": 1,
+      "n_meshes": 840,
+      "template_to_sample_fwd": [
+        "/results/ccf_alignment/841260_to_exaSPIM_SyN_1Warp.nii.gz",
+        "/results/ccf_alignment/841260_to_exaSPIM_SyN_0GenericAffine.mat"
+      ]
+    },
+    "run_script": "/code/run_invert_ccf_objs.sh",
+    "url": "https://codeocean.allenneuraldynamics.org/capsule/6898460/tree",
+    "version": "0.0.1"
+  },
+  "end_date_time": "2026-07-31T03:21:26.907802Z",
+  "experimenters": [
+    "Peter Grotz"
+  ],
+  "name": "CCF meshes to sample space",
+  "notes": "Reverse-transforms CCF region surface meshes into sample space (point transform of vertices through the CCF->template->sample chain).",
+  "output_parameters": null,
+  "output_path": "ccf_alignment/ccf_mesh_to_sample",
+  "pipeline_name": "exaspim-data-processing",
+  "process_type": "Image atlas alignment",
+  "resources": null,
+  "stage": "Processing",
+  "start_date_time": "2026-07-31T03:18:31.987546Z"
+}

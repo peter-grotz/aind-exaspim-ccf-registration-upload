@@ -1,0 +1,83 @@
+{
+   "creation_time": "2026-07-07T15:13:51-07:00",
+   "data_level": "raw",
+   "data_summary": "The following files have been archived or deleted: exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr, exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/flatfield_correction/SPIM.ome.zarr",
+   "describedBy": "https://raw.githubusercontent.com/AllenNeuralDynamics/aind-data-schema/main/src/aind_data_schema/core/data_description.py",
+   "funding_source": [
+      {
+         "fundee": null,
+         "funder": {
+            "abbreviation": "AI",
+            "name": "Allen Institute",
+            "registry": {
+               "abbreviation": "ROR",
+               "name": "Research Organization Registry"
+            },
+            "registry_identifier": "03cpe7c52"
+         },
+         "grant_number": null
+      },
+      {
+         "fundee": null,
+         "funder": {
+            "abbreviation": "NINDS",
+            "name": "National Institute of Neurological Disorders and Stroke",
+            "registry": {
+               "abbreviation": "ROR",
+               "name": "Research Organization Registry"
+            },
+            "registry_identifier": "01s5ya894"
+         },
+         "grant_number": "1U19NS123714-01"
+      },
+      {
+         "fundee": null,
+         "funder": {
+            "abbreviation": "NINDS",
+            "name": "National Institute of Neurological Disorders and Stroke",
+            "registry": {
+               "abbreviation": "ROR",
+               "name": "Research Organization Registry"
+            },
+            "registry_identifier": "01s5ya894"
+         },
+         "grant_number": "1RF1MH128841-01"
+      }
+   ],
+   "group": null,
+   "institution": {
+      "abbreviation": "AIND",
+      "name": "Allen Institute for Neural Dynamics",
+      "registry": {
+         "abbreviation": "ROR",
+         "name": "Research Organization Registry"
+      },
+      "registry_identifier": "04szwah67"
+   },
+   "investigators": [
+      {
+         "abbreviation": null,
+         "name": "Jayaram Chandrashekar",
+         "registry": null,
+         "registry_identifier": null
+      }
+   ],
+   "label": null,
+   "license": "CC-BY-4.0",
+   "modality": [
+      {
+         "abbreviation": "SPIM",
+         "name": "Selective plane illumination microscopy"
+      }
+   ],
+   "name": "exaSPIM_841260_2026-07-07_15-13-51",
+   "platform": {
+      "abbreviation": "exaSPIM",
+      "name": "ExaSPIM platform"
+   },
+   "project_name": "Single Neuron Reconstructions",
+   "related_data": [],
+   "restrictions": null,
+   "schema_version": "1.0.4",
+   "subject_id": "841260"
+}

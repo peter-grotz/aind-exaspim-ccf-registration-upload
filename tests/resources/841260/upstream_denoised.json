@@ -1,0 +1,139 @@
+{
+   "object_type": "Processing",
+   "describedBy": "https://raw.githubusercontent.com/AllenNeuralDynamics/aind-data-schema/main/src/aind_data_schema/core/processing.py",
+   "schema_version": "2.2.5",
+   "data_processes": [
+      {
+         "object_type": "Data process",
+         "process_type": "Denoising",
+         "name": "Inference dispatch",
+         "stage": "Processing",
+         "code": {
+            "object_type": "Code",
+            "url": "https://codeocean.allenneuraldynamics.org/capsule/9976378",
+            "name": null,
+            "version": "e769d82d67e9a241e5e14e9fc8cefc0952b4a6c5",
+            "container": null,
+            "run_script": null,
+            "language": null,
+            "language_version": null,
+            "input_data": null,
+            "parameters": {
+               "input_uri": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51/SPIM.ome.zarr",
+               "output_base": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr",
+               "spec_dir": "/results",
+               "chunks": null,
+               "aws_region": "us-west-2",
+               "copy_limit": "shared",
+               "s3_req_limit": "shared",
+               "anon_s3": false,
+               "res": "0",
+               "channel": "561",
+               "config": "/data/inference_config.json",
+               "workflow_type": "denoise-net",
+               "checkpoint_asset_id": "feb19f26-ccd1-4c3c-8a33-16cf3bc064b6",
+               "checkpoint_path": "/data/runtime-weights/BM4DNet-20260716-48--162.310937.pth",
+               "wait": true,
+               "poll_interval": 5.0,
+               "max_retries": 1000
+            },
+            "core_dependency": null
+         },
+         "experimenters": [],
+         "pipeline_name": null,
+         "start_date_time": "2026-07-26T13:25:55.768570Z",
+         "end_date_time": "2026-07-27T01:29:48.992900Z",
+         "output_path": null,
+         "output_parameters": null,
+         "notes": null,
+         "resources": null
+      },
+      {
+         "object_type": "Data process",
+         "process_type": "Other",
+         "name": "In-place multiscale generation",
+         "stage": "Processing",
+         "code": {
+            "object_type": "Code",
+            "url": "https://codeocean.allenneuraldynamics.org/capsule/8739853/tree",
+            "name": null,
+            "version": null,
+            "container": null,
+            "run_script": "code/run",
+            "language": "Python",
+            "language_version": null,
+            "input_data": null,
+            "parameters": {
+               "dispatch_metadata_path": "/data/tile_000000.json",
+               "tile_count": 2,
+               "requested_n_levels": 7,
+               "io_backend": "tensorstore",
+               "output_shards": "inherit",
+               "io_concurrency": {},
+               "reducer": "rank",
+               "reducer_rank": -2
+            },
+            "core_dependency": null
+         },
+         "experimenters": [
+            "Cameron Arshadi"
+         ],
+         "pipeline_name": null,
+         "start_date_time": "2026-07-27T01:31:38.284522Z",
+         "end_date_time": "2026-07-27T03:39:32.065443Z",
+         "output_path": "multiscale_data_process_tile_000000_ch_488.zarr.json",
+         "output_parameters": {
+            "dispatch_metadata_path": "/data/tile_000000.json",
+            "tile_paths": [
+               "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr/tile_000000_ch_488.zarr",
+               "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr/tile_000000_ch_561.zarr"
+            ],
+            "requested_n_levels": 7,
+            "io_backend": "tensorstore",
+            "output_shards": "inherit",
+            "io_concurrency": {},
+            "reducer": "rank",
+            "tile_results": [
+               {
+                  "tile_path": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr/tile_000000_ch_488.zarr",
+                  "status": "success",
+                  "started_at": "2026-07-27T01:31:38.284544",
+                  "ended_at": "2026-07-27T01:32:00.962417",
+                  "levels_written": [
+                     "0",
+                     "1",
+                     "2",
+                     "3",
+                     "4",
+                     "5",
+                     "6"
+                  ],
+                  "error": null
+               },
+               {
+                  "tile_path": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr/tile_000000_ch_561.zarr",
+                  "status": "success",
+                  "started_at": "2026-07-27T01:32:00.962495",
+                  "ended_at": "2026-07-27T03:39:32.065108",
+                  "levels_written": [
+                     "0",
+                     "1",
+                     "2",
+                     "3",
+                     "4",
+                     "5",
+                     "6"
+                  ],
+                  "error": null
+               }
+            ],
+            "reducer_rank": -2
+         },
+         "notes": "Generates OME-Zarr multiscale levels in place for each input tile.",
+         "resources": null
+      }
+   ],
+   "pipelines": null,
+   "notes": null,
+   "dependency_graph": null
+}

@@ -1,0 +1,62 @@
+{
+  "code": {
+    "commit_hash": null,
+    "container": null,
+    "core_dependency": null,
+    "input_data": null,
+    "language": "Python",
+    "language_version": null,
+    "name": "aind-exaspim-ccf-registration",
+    "object_type": "Code",
+    "parameters": {
+      "dataset_id": "841260",
+      "input_uri": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/fusion/fused_ccf_ch.zarr/",
+      "level": 3,
+      "mask_applied": false,
+      "resolution_um": 25,
+      "sample_to_template_registration": {
+        "affine_reg_iterations": [
+          200,
+          100,
+          25,
+          3
+        ],
+        "ccf_path": "../data/allen_mouse_ccf/average_template/average_template_25.nii.gz",
+        "exaspim_template_path": "../data/exaSPIM_template_25um/exaspim_template_7sujects_nomask_25um_round6.nii.gz",
+        "log_level": "ERROR",
+        "sample_scale": [
+          0.027,
+          0.02025,
+          0.02025
+        ],
+        "syn_reg_iterations": [
+          200,
+          100,
+          25,
+          3
+        ]
+      },
+      "template_to_ccf_transforms": [
+        "/data/reg_exaspim_template_to_ccf_25um_v1.4/1Warp.nii.gz",
+        "/data/reg_exaspim_template_to_ccf_25um_v1.4/0GenericAffine.mat"
+      ],
+      "use_fused_mask": true
+    },
+    "run_script": "/code/run",
+    "url": "https://codeocean.allenneuraldynamics.org/capsule/6898460/tree",
+    "version": "0.0.1"
+  },
+  "end_date_time": "2026-07-31T00:52:36.861877Z",
+  "experimenters": [
+    "Peter Grotz"
+  ],
+  "name": "Image atlas alignment - 25 um",
+  "notes": "Import + template-based registration (25 um): sample -> template -> CCF",
+  "output_parameters": null,
+  "output_path": "ccf_alignment",
+  "pipeline_name": "exaspim-data-processing",
+  "process_type": "Image atlas alignment",
+  "resources": null,
+  "stage": "Processing",
+  "start_date_time": "2026-07-31T00:36:03.849415Z"
+}

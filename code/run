@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -ex
 
-# This is the master script for the capsule. When you click "Reproducible Run", the code in this file will execute.
+# Record the resolved environment, per AIND software practices.
+pip list > /results/pip_list.txt
+
 python -u main.py "$@"

@@ -1,46 +1,70 @@
 # aind-exaspim-ccf-registration-upload
 
-Aggregates the pipeline's metadata into a validated top-level **`processing.json`**
-(via the official `aind-metadata-manager` on `aind-data-schema` v2) and
-**publishes** the spec-compliant subset of results to the asset's S3 location.
-Runs on Python 3.10 + the v2 schema stack. Part of the exaSPIM CCF-registration
-+ soma-reg pipeline (Code Ocean pipeline `9578158`).
+Publishes the exaSPIM CCF-registration pipeline's results back to their asset on
+`aind-open-data`, with one validated `processing.json` describing how they were made.
+The last stage of Code Ocean pipeline `9578158`.
 
-## Run it standalone
+## What it does
+
+1. **Finds the asset** from the manifest's `zarr_multiscale.input_uri`: the dataset is the
+   URI's first key segment, whatever its name. The subject comes from the asset's own
+   `subject.json` (or `data_description.json`), never from its name.
+2. **Builds the metadata with `aind-metadata-manager`**, in one pass
+   (`code/upload_capsule/metadata.py`). The producers' `*_data_process.json` records and
+   the asset's upstream `processing.json` files (`tile_alignment/`, `fusion/`,
+   `flatfield_correction/`, `denoised/`) go in together; the manager validates and merges
+   them, keeping each upstream document's dependency graph. It cannot know the edges
+   between bare records, so those come from `DEPENDENCIES` in
+   `code/upload_capsule/config.py`. Each published subfolder's `processing.json` is a
+   slice of that document.
+3. **Checks before publishing.** An invalid record, a record with no `DEPENDENCIES` entry,
+   or a missing atlas alignment fails the run with nothing written.
+4. **Publishes** each stage's whitelisted files and stage `processing.json`, and the root
+   `processing.json`, replacing what is there.
+5. **Updates the tracking sheet** when `SMARTSHEET_TOKEN` is set.
+
+## Inputs (`/data`)
+
+| Path | From |
+|---|---|
+| `exaspim_manifest.json` | the run's manifest from `cp_jsons`, passed on by registration (override with `--manifest`) |
+| `ccf_alignment/` | registration: outputs and records |
+| `soma_detection/` | soma→CCF: `soma_locations.csv` |
+| `soma_detection_meta/` | soma detection: records (`SOMA_META_DIR`) |
+| `fusion/` | CCF-channel fusion: record only; nothing is republished |
+
+AWS credentials need read and write on the asset.
+
+## Outputs (to the asset)
+
+- `processing.json` — the whole lineage.
+- `ccf_alignment/` — transforms, `ccf_aligned.zarr`, annotation and meshes in sample
+  space, and the stage `processing.json`.
+- `soma_detection/` — `soma_locations.csv` and the stage `processing.json`.
+
+## Configuration
+
+| Variable | Default | |
+|---|---|---|
+| `PIPELINE_NAME` | `exaspim-data-processing` | Must match the producers' `pipeline_name`. |
+| `PIPELINE_VERSION`, `PIPELINE_URL`, `PROCESSOR_FULL_NAME` | | Recorded in `processing.json`. |
+| `SOMA_META_DIR` | `soma_detection_meta` | Mount of the soma-detection records. |
+| `DRY_RUN` | off | Build everything into `/results/_publish` and write nothing to the asset. Same as `--dry-run`. |
+| `SMARTSHEET_TOKEN` | | Optional; a Code Ocean secret. |
+
+## Changing a producer
+
+Add or rename a producer's process in `DEPENDENCIES`, and its published files in
+`STAGES` (`code/upload_capsule/config.py`).
+
+## Tests
+
+Need Python ≥3.10 and the pinned stack from `environment/Dockerfile`, plus `pytest`:
 
 ```bash
-cd code && ./run        # = python -u main.py
+python -m pytest tests
 ```
 
-What it does: stages producer `*_data_process.json` from `../data`, fetches
-upstream `processing.json` from the asset's S3, runs the manager to build the
-aggregated `processing.json` (fixes the dependency graph + backfills Code
-versions), curates the publish set, and uploads to S3.
-
-## Inputs
-- `../data/<exaspim_manifest>.json` — `zarr_multiscale.input_uri` → the asset.
-- Producer outputs passed via the pipeline's `/results`: `../data/ccf_alignment/`,
-  `../data/soma_detection/`, `../data/fusion/` (the fusion `*_data_process.json`).
-- Upstream `processing.json` is read from the input asset on S3.
-- **AWS credentials** with S3 read (input asset) + write (output target).
-
-Outputs are always published back to the input asset on `aind-open-data` (the
-prefix the manifest's `input_uri` points at) — there is no scratch/test target.
-
-## Environment variables
-- `PIPELINE_NAME` (default `exaspim-data-processing`), `PIPELINE_VERSION`,
-  `PIPELINE_URL`, `PROCESSOR_FULL_NAME` — stamped into `processing.json`.
-  `PIPELINE_NAME` **must match** the `pipeline_name` the producers emit.
-- `SMARTSHEET_TOKEN` *(optional)* — if set, updates the tracking sheet; leave
-  unset for tests.
-
-## Outputs (to the input asset on aind-open-data)
-- `processing.json` — full aggregated lineage (asset root).
-- `ccf_alignment/` — whitelisted transforms + zarr + `ccf_anno_to_sample/` +
-  a stage-scoped `processing.json`.
-- `soma_detection/soma_locations.csv`.
-
-## Notes
-- Only this capsule needs the v2 schema stack (git-tag installs, Python ≥3.10);
-  producer capsules emit plain JSON via the stdlib `aind_process_record.py`.
-- Curation/reduction happens **only here** — producer `/results` are left intact.
+They run the capsule end to end against a local stand-in for S3, using the records
+published for sample 841260, and check the result reproduces that sample's published
+`processing.json`.

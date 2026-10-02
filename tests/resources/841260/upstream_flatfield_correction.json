@@ -1,0 +1,163 @@
+{
+   "object_type": "Processing",
+   "describedBy": "https://raw.githubusercontent.com/AllenNeuralDynamics/aind-data-schema/main/src/aind_data_schema/core/processing.py",
+   "schema_version": "2.2.5",
+   "data_processes": [
+      {
+         "object_type": "Data process",
+         "process_type": "Other",
+         "name": "Whole brain masking",
+         "stage": "Processing",
+         "code": {
+            "object_type": "Code",
+            "url": "https://github.com/AllenNeuralDynamics/exaspim-sam",
+            "name": "exaspim-sam",
+            "version": "a1132cd37a21b24ab32bad1f8de4469df80d397b",
+            "container": null,
+            "run_script": "code/run",
+            "language": "Python",
+            "language_version": null,
+            "input_data": null,
+            "parameters": {
+               "input_path": "/data/config.json",
+               "res_488": 1,
+               "res_561": 4,
+               "inference_channel": "561",
+               "raw_save_dir": "/results/raw",
+               "mask_save_dir": "/results/mask",
+               "pred_save_dir": "/results/pred",
+               "postprocessed_save_dir": "/results/postprocessed",
+               "preprocess": {
+                  "channels": [
+                     "488",
+                     "561"
+                  ],
+                  "gaussian_sigma": 2,
+                  "threshold_method": "fixed",
+                  "fixed_threshold": 1.0,
+                  "percentile": 1.0
+               },
+               "inference": {
+                  "medsam_checkpoint": "/data/medsam_best.pth",
+                  "medsam_model_type": "vit_b",
+                  "device": "cuda:0",
+                  "batch_size": 4,
+                  "use_amp": true,
+                  "use_torch_compile": true,
+                  "bbox_prompt_type": "whole"
+               },
+               "postprocess": {
+                  "input_path": "/results/pred",
+                  "output_dir": "/results/postprocessed",
+                  "raw_base_dir": "/results/raw",
+                  "kernel_size": 3
+               },
+               "tile_json_path": "/data/config.json",
+               "selected_tile_count": 2
+            },
+            "core_dependency": null
+         },
+         "experimenters": [
+            "Cameron Arshadi"
+         ],
+         "pipeline_name": null,
+         "start_date_time": "2026-07-27T22:10:25Z",
+         "end_date_time": "2026-07-27T22:17:54Z",
+         "output_path": "/results/postprocessed",
+         "output_parameters": null,
+         "notes": "Whole brain masking pipeline using preprocessing, MedSAM inference, and mask postprocessing. Run status: success; exit code: 0.",
+         "resources": null
+      },
+      {
+         "object_type": "Data process",
+         "process_type": "Image flat-field correction",
+         "name": "Image flat-field correction",
+         "stage": "Processing",
+         "code": {
+            "object_type": "Code",
+            "url": "https://github.com/AllenNeuralDynamics/exaspim-flatfield-correction",
+            "name": null,
+            "version": "0.2.3",
+            "container": null,
+            "run_script": null,
+            "language": null,
+            "language_version": null,
+            "input_data": [
+               {
+                  "object_type": "Data asset",
+                  "url": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr"
+               }
+            ],
+            "parameters": {
+               "tile_paths": [
+                  "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr/tile_000000_ch_488.zarr",
+                  "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/denoised/SPIM.ome.zarr/tile_000000_ch_561.zarr"
+               ],
+               "output": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/flatfield_correction/SPIM.ome.zarr",
+               "save_outputs": true,
+               "results_dir": "/results",
+               "res": "0",
+               "method": "fitting",
+               "overwrite": true,
+               "skip_flat_field": false,
+               "skip_bkg_sub": false,
+               "flatfield_path": null,
+               "mask_dir": "/data/masks",
+               "fitting_config": "/data/fitting_config.json",
+               "num_workers": 16,
+               "worker_mode": "processes",
+               "log_level": 20,
+               "n_levels": 7,
+               "io_backend": "tensorstore",
+               "io_concurrency": {
+                  "zarr_async_concurrency": 8,
+                  "zarr_threading_max_workers": 8,
+                  "tensorstore_data_copy_concurrency": 8,
+                  "tensorstore_file_io_concurrency": 8,
+                  "tensorstore_s3_request_concurrency": 8,
+                  "tensorstore_http_request_concurrency": 8
+               },
+               "max_chunks_per_block": 32768,
+               "output_zarr_format": "2",
+               "mask_shard_size": [
+                  512,
+                  512,
+                  512
+               ],
+               "probability_shard_size": [
+                  256,
+                  256,
+                  256
+               ],
+               "corrected_shard_size": [
+                  512,
+                  512,
+                  512
+               ],
+               "corrected_rank": -2,
+               "use_reference_bkg": false,
+               "background_smoothing_sigma": 3.0,
+               "background_final_smoothing_sigma": 0.0,
+               "binned_channel": "488",
+               "is_binned": false,
+               "median_summary_path": "/data/masks/tile_000009_median_intensity_summary.json",
+               "output_path": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/flatfield_correction/SPIM.ome.zarr"
+            },
+            "core_dependency": null
+         },
+         "experimenters": [
+            "unknown"
+         ],
+         "pipeline_name": null,
+         "start_date_time": "2026-07-27T22:26:21.933680Z",
+         "end_date_time": "2026-07-27T22:35:50.695085Z",
+         "output_path": null,
+         "output_parameters": null,
+         "notes": null,
+         "resources": null
+      }
+   ],
+   "pipelines": null,
+   "notes": null,
+   "dependency_graph": null
+}
