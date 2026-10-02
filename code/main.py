@@ -2,10 +2,10 @@
 
 1. Identify the asset from the manifest's ``input_uri``, and its subject from the
    asset's own metadata.
-2. Build one ``processing.json`` per producer stage, then merge those with the asset's
-   upstream ``processing.json`` files into the root document (see
+2. Build the asset's ``processing.json`` from the producers' records and the asset's
+   upstream ``processing.json`` files, in one pass of the metadata manager (see
    :mod:`upload_capsule.metadata`).
-3. Curate each publishing stage's files and its stage document.
+3. Curate each publishing stage's files, with its slice of that document.
 4. Unless ``--dry-run``, upload the curated tree to the asset.
 5. If ``SMARTSHEET_TOKEN`` is set, mark the subject registered.
 """
@@ -106,23 +106,22 @@ def run(args: argparse.Namespace, fs) -> int:
             shutil.rmtree(directory)
         directory.mkdir(parents=True)
 
-    stage_documents = {}
+    records_by_stage = {}
     for stage in STAGES:
         records = metadata.load_records(args.data_dir / stage.records_dir, pipeline.name)
-        if not records:
+        if records:
+            records_by_stage[stage.name] = records
+            logger.info("Stage %s: %s", stage.name, [r.name for r in records])
+        else:
             logger.warning(
                 "No records for stage %s in /data/%s; its processes will be absent",
                 stage.name,
                 stage.records_dir,
             )
-            continue
-        stage_documents[stage.name] = metadata.build_stage_document(
-            records, work / "stages" / stage.name, pipeline
-        )
-        logger.info("Stage %s: %s", stage.name, [r.name for r in records])
 
     upstream = fetch_upstream(fs, asset, work / "upstream")
-    root = metadata.aggregate(stage_documents, upstream, work / "aggregate", pipeline)
+    all_records = [r for records in records_by_stage.values() for r in records]
+    root = metadata.build_processing(all_records, upstream, work / "manager", pipeline)
     missing = metadata.missing_processes(root, REQUIRED_PROCESSES)
     if missing:
         raise MetadataError(f"Required processes missing; nothing published: {missing}")
@@ -144,9 +143,11 @@ def run(args: argparse.Namespace, fs) -> int:
             logger.warning(
                 "Stage %s has nothing to publish in /data/%s", stage.name, stage.files_dir
             )
-        if stage.name in stage_documents:
+        if stage.name in records_by_stage:
+            names = [r.name for r in records_by_stage[stage.name]]
             metadata.write_document(
-                stage_documents[stage.name], publish_root / stage.name / "processing.json"
+                metadata.stage_document(root, names),
+                publish_root / stage.name / "processing.json",
             )
     metadata.write_document(root, publish_root / "processing.json")
 
@@ -158,7 +159,6 @@ def run(args: argparse.Namespace, fs) -> int:
 
     count = publish.upload_tree(fs, publish_root, asset.root)
     logger.info("Uploaded %d files to %s", count, asset.uri)
-    (args.results_dir / "finished_registration.txt").write_text(asset.uri, encoding="utf-8")
 
     if token:
         from upload_capsule.smartsheet import mark_registered

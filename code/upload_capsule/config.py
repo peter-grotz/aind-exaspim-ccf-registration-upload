@@ -64,7 +64,7 @@ STAGES = (
         publish=True,
         patterns=("soma_locations.csv",),
     ),
-    # The CCF-channel fusion record is aggregated but nothing is republished: the asset's
+    # The CCF-channel fusion record is merged in but nothing is republished: the asset's
     # fusion/ belongs to the upstream processing pipeline.
     Stage(name="ccf_fusion", records_dir="fusion"),
 )
@@ -89,8 +89,8 @@ DEPENDENCIES: dict[str, list[str]] = {
 """Inputs of each process, by ``DataProcess.name``.
 
 Every record a producer stage emits must have an entry; a record without one fails the
-run rather than receiving an invented edge. Edges to processes absent from a document are
-dropped, so the same table serves the stage documents and the aggregate.
+run rather than receiving an invented edge. Edges to processes absent from the run are
+dropped.
 """
 
 REQUIRED_PROCESSES = ("Image atlas alignment - 25 um", "Image atlas alignment - 10 um")

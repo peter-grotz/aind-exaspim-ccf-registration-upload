@@ -41,7 +41,6 @@ def test_a_run_publishes(s3, tmp_path, monkeypatch, name):
     assert not s3.exists(f"{base}/ccf_fusion")
     assert json.loads(s3.cat(f"{base}/processing.json"))["dependency_graph"]
     assert not s3.exists(f"{base}/original_metadata")
-    assert (tmp_path / "results" / "finished_registration.txt").read_text() == f"s3://{base}/"
 
 
 def test_missing_registration_records_publish_nothing(s3, tmp_path, monkeypatch):

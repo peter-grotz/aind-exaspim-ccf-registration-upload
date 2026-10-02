@@ -12,17 +12,19 @@ PIPELINE = Pipeline("exaspim-data-processing", "0.0.0", "https://example.org/pip
 RECORDS = RESOURCES / "records"
 
 
-def _stages(tmp_path):
+STAGES = {"ccf_alignment": "ccf_alignment", "soma_detection": "soma", "ccf_fusion": "fusion"}
+
+
+def _records():
     return {
-        stage: metadata.build_stage_document(
-            metadata.load_records(RECORDS / folder, PIPELINE.name), tmp_path / stage, PIPELINE
-        )
-        for stage, folder in (
-            ("ccf_alignment", "ccf_alignment"),
-            ("soma_detection", "soma"),
-            ("ccf_fusion", "fusion"),
-        )
+        stage: metadata.load_records(RECORDS / folder, PIPELINE.name)
+        for stage, folder in STAGES.items()
     }
+
+
+def _root(tmp_path):
+    records = [r for rs in _records().values() for r in rs]
+    return metadata.build_processing(records, _upstream(tmp_path), tmp_path / "w", PIPELINE)
 
 
 def _upstream(tmp_path):
@@ -62,22 +64,11 @@ def test_an_absent_stage_has_no_records(tmp_path):
 def test_a_record_without_a_dependency_entry_fails(tmp_path):
     records = metadata.load_records(RECORDS / "fusion", PIPELINE.name)
     with pytest.raises(MetadataError, match="CCF channel fusion"):
-        metadata.build_stage_document(records, tmp_path / "w", PIPELINE, dependencies={})
+        metadata.build_processing(records, [], tmp_path / "w", PIPELINE, dependencies={})
 
 
-def test_stage_documents_carry_only_their_own_edges(tmp_path):
-    stages = _stages(tmp_path)
-    assert stages["ccf_alignment"].dependency_graph == {
-        "Image atlas alignment - 25 um": [],
-        "Image atlas alignment - 10 um": ["Image atlas alignment - 25 um"],
-        "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
-        "CCF meshes to sample space": ["Image atlas alignment - 25 um"],
-    }
-    assert stages["ccf_fusion"].dependency_graph == {"CCF channel fusion": []}
-
-
-def test_the_aggregate_reproduces_the_published_841260_document(tmp_path):
-    root = metadata.aggregate(_stages(tmp_path), _upstream(tmp_path), tmp_path / "agg", PIPELINE)
+def test_the_document_reproduces_the_published_841260_one(tmp_path):
+    root = _root(tmp_path)
     published = json.loads((RESOURCES / "published_root.json").read_text())
     assert sorted(p.name for p in root.data_processes) == sorted(
         p["name"] for p in published["data_processes"]
@@ -86,13 +77,27 @@ def test_the_aggregate_reproduces_the_published_841260_document(tmp_path):
     assert [p.name for p in root.pipelines] == ["exaspim-data-processing"]
 
 
-def test_edges_between_stages_are_added_in_the_aggregate(tmp_path):
-    root = metadata.aggregate(_stages(tmp_path), _upstream(tmp_path), tmp_path / "agg", PIPELINE)
+def test_edges_between_stages_are_set(tmp_path):
+    root = _root(tmp_path)
     assert root.dependency_graph["Image atlas alignment - 25 um"] == ["CCF channel fusion"]
     assert root.dependency_graph["Proposal generation"] == ["Image tile fusing"]
 
 
+def test_a_stage_document_keeps_only_its_own_processes_and_edges(tmp_path):
+    root = _root(tmp_path)
+    names = [r.name for r in _records()["ccf_alignment"]]
+    stage = metadata.stage_document(root, names)
+    assert sorted(p.name for p in stage.data_processes) == sorted(names)
+    assert stage.dependency_graph == {
+        "Image atlas alignment - 25 um": [],
+        "Image atlas alignment - 10 um": ["Image atlas alignment - 25 um"],
+        "CCF annotation to sample space": ["Image atlas alignment - 25 um"],
+        "CCF meshes to sample space": ["Image atlas alignment - 25 um"],
+    }
+    assert [p.name for p in stage.pipelines] == ["exaspim-data-processing"]
+
+
 def test_missing_and_unversioned_processes_are_reported(tmp_path):
-    root = metadata.aggregate(_stages(tmp_path), _upstream(tmp_path), tmp_path / "agg", PIPELINE)
+    root = _root(tmp_path)
     assert metadata.missing_processes(root, ["Image atlas alignment - 25 um", "Nope"]) == ["Nope"]
     assert metadata.unversioned_processes(root) == ["In-place multiscale generation"]

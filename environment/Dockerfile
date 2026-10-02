@@ -1,8 +1,7 @@
 # hash:sha256:3bd65a6ed0c112fdaa291b29e439fdbfa6a3a2157738a0a0e532d5377a2ce126
 # Upload capsule env — Python 3.10 for the v2 metadata stack. Metadata is built
-# by the official aind-metadata-manager (+ aind-metadata-upgrader), which run on
-# aind-data-schema v2. v2 + models v5 are GitHub tags (NOT on PyPI) and need
-# Python >=3.10.
+# by the official aind-metadata-manager on aind-data-schema v2. v2 + models v5 are
+# GitHub tags (NOT on PyPI) and need Python >=3.10.
 ARG REGISTRY_HOST
 FROM $REGISTRY_HOST/codeocean/mambaforge3:23.1.0-4-python3.10.12-ubuntu22.04
 
@@ -11,10 +10,6 @@ ARG AWS_ACCESS_KEY_ID
 ARG AWS_DEFAULT_REGION
 ARG AWS_SECRET_ACCESS_KEY
 
-RUN conda install -y --channel=conda-forge \
-        s3fs==2023.9.2 \
-    && conda clean -ya
-
 # aind-data-schema v2 + its models v5 are git-tag-only (not on PyPI). Install
 # models FIRST, then the schema (ordering matters).
 RUN pip install -U --no-cache-dir \
@@ -22,12 +17,9 @@ RUN pip install -U --no-cache-dir \
     "aind-data-schema @ git+https://github.com/AllenNeuralDynamics/aind-data-schema.git@v2.7.1" \
     pydantic-settings \
     s3fs==2023.9.2 \
-    openpyxl==3.1.5 \
-    smartsheet-python-sdk==4.4.0 \
-    awscli
+    smartsheet-python-sdk==4.4.0
 
-# Official AIND metadata tooling (git-only; deps already satisfied above -> --no-deps).
-# Pinned: the manager's merge behaviour changed as recently as v0.3.1.
+# aind-metadata-manager is git-only; its deps are satisfied above, hence --no-deps.
+# Pinned: its merge behaviour changed as recently as v0.3.1.
 RUN pip install -U --no-cache-dir --no-deps \
-    "aind-metadata-upgrader @ git+https://github.com/AllenNeuralDynamics/aind-metadata-upgrader.git@19b043bd4bc079c4902843cbd945fac9e53f6570" \
     "aind-metadata-manager @ git+https://github.com/AllenNeuralDynamics/aind-metadata-manager.git@2957483f4516d758f66851bddff605dd42d0e230"

@@ -1,15 +1,14 @@
 """Build the asset's ``processing.json`` with ``aind-metadata-manager``.
 
-Two passes, both through the manager:
+One pass: this pipeline's ``*_data_process.json`` records and the input asset's upstream
+``processing.json`` files go to the manager together. It validates them, merges them
+(keeping each upstream document's dependency graph and pipelines) and rejects duplicate
+names. It chains bare records in the order it finds them, which is not their lineage, so
+the edges of this pipeline's processes are then set from
+:data:`~upload_capsule.config.DEPENDENCIES`.
 
-1. **One document per stage.** A stage's producers emit bare ``*_data_process.json``
-   records. The manager validates and collects them, but chains bare records in the order
-   it finds them, which is not their lineage, so the edges are set from
-   :data:`~upload_capsule.config.DEPENDENCIES`.
-2. **The aggregate.** The stage documents and the input asset's upstream
-   ``processing.json`` files go back through the manager as documents, which it merges
-   while keeping each one's dependency graph and pipelines. Only the edges *between*
-   documents are then added, from the same table.
+Each published subfolder's ``processing.json`` is a slice of that one document, so the
+two cannot disagree.
 
 Records are validated before the manager sees them. The manager drops an invalid record
 with a log warning and carries on, which would publish incomplete lineage; here an invalid
@@ -132,29 +131,33 @@ def _with_edges(
     )
 
 
-def build_stage_document(
+def build_processing(
     records: Sequence[Record],
+    upstream_documents: Sequence[Path],
     workdir: Path,
     pipeline: Pipeline,
     dependencies: Mapping[str, Sequence[str]] = DEPENDENCIES,
 ) -> Processing:
-    """Assemble one stage's records into a ``Processing`` document.
+    """Merge this pipeline's records and the upstream documents into one ``Processing``.
 
     Parameters
     ----------
     records : Sequence[Record]
-        The stage's records.
+        Every producer record of this run.
+    upstream_documents : Sequence[Path]
+        The input asset's existing upstream ``processing.json`` files.
     workdir : Path
-        Empty scratch directory for the manager.
+        Scratch directory for the manager; emptied first.
     pipeline : Pipeline
         This pipeline.
     dependencies : Mapping[str, Sequence[str]], optional
-        Process inputs by name.
+        Process inputs by name. Every record must have an entry; it is also applied to
+        any upstream process it lists.
 
     Returns
     -------
     Processing
-        The stage document, with edges only between the stage's own processes.
+        The asset's ``processing.json``.
 
     Raises
     ------
@@ -165,48 +168,46 @@ def build_stage_document(
     if unknown:
         raise MetadataError(f"No dependency entry for {unknown}; add them to config.DEPENDENCIES")
     _reset(workdir)
-    for record in records:
-        (workdir / record.path.name).write_text(json.dumps(record.document), encoding="utf-8")
+    for index, record in enumerate(records):
+        path = workdir / f"{index:02d}_{record.path.name}"
+        path.write_text(json.dumps(record.document), encoding="utf-8")
+    # The manager reads every *processing.json under its input directory as a document.
+    for index, path in enumerate(upstream_documents):
+        shutil.copy2(path, workdir / f"upstream{index}_{path.parent.name}_processing.json")
     processing = MetadataManager(_settings(workdir, pipeline)).create_processing_metadata()
-    return _with_edges(processing, [r.name for r in records], dependencies)
+    listed = [p.name for p in processing.data_processes if p.name in dependencies]
+    return _with_edges(processing, listed, dependencies)
 
 
-def aggregate(
-    stage_documents: Mapping[str, Processing],
-    upstream_documents: Sequence[Path],
-    workdir: Path,
-    pipeline: Pipeline,
-    dependencies: Mapping[str, Sequence[str]] = DEPENDENCIES,
-) -> Processing:
-    """Merge the stage and upstream documents into the asset's ``processing.json``.
+def stage_document(processing: Processing, names: Iterable[str]) -> Processing:
+    """Slice the processes ``names`` out of the asset's ``processing.json``.
+
+    Edges are kept only between the slice's own processes: a stage's first process shows
+    no inputs, because what feeds it belongs to another stage.
 
     Parameters
     ----------
-    stage_documents : Mapping[str, Processing]
-        This pipeline's stage documents, by stage name.
-    upstream_documents : Sequence[Path]
-        The input asset's existing upstream ``processing.json`` files.
-    workdir : Path
-        Empty scratch directory for the manager.
-    pipeline : Pipeline
-        This pipeline.
-    dependencies : Mapping[str, Sequence[str]], optional
-        Process inputs by name; applied to every listed process present.
+    processing : Processing
+        The asset's ``processing.json``.
+    names : Iterable[str]
+        The stage's process names.
 
     Returns
     -------
     Processing
-        The aggregate.
+        The stage's ``processing.json``.
     """
-    _reset(workdir)
-    # The manager reads every *processing.json under its input directory.
-    for stage, document in stage_documents.items():
-        write_document(document, workdir / f"{stage}_processing.json")
-    for index, path in enumerate(upstream_documents):
-        shutil.copy2(path, workdir / f"upstream{index}_{path.parent.name}_processing.json")
-    processing = MetadataManager(_settings(workdir, pipeline)).create_processing_metadata()
-    present = [p.name for p in processing.data_processes if p.name in dependencies]
-    return _with_edges(processing, present, dependencies)
+    keep = set(names)
+    processes = [p for p in processing.data_processes if p.name in keep]
+    graph = processing.dependency_graph or {}
+    used = {p.pipeline_name for p in processes}
+    return Processing(
+        data_processes=processes,
+        pipelines=[c for c in processing.pipelines or [] if c.name in used] or None,
+        dependency_graph={
+            p.name: [d for d in graph.get(p.name, []) if d in keep] for p in processes
+        },
+    )
 
 
 def write_document(processing: Processing, path: Path) -> None:

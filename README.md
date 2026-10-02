@@ -9,15 +9,14 @@ The last stage of Code Ocean pipeline `9578158`.
 1. **Finds the asset** from the manifest's `zarr_multiscale.input_uri`: the dataset is the
    URI's first key segment, whatever its name. The subject comes from the asset's own
    `subject.json` (or `data_description.json`), never from its name.
-2. **Builds the metadata with `aind-metadata-manager`**, in two passes
-   (`code/upload_capsule/metadata.py`):
-   - one `processing.json` per producer stage, from its `*_data_process.json` records;
-   - the root `processing.json`, merging those stage documents with the asset's upstream
-     `processing.json` files (`tile_alignment/`, `fusion/`, `flatfield_correction/`,
-     `denoised/`).
-   The manager validates, merges and keeps each document's dependency graph. It cannot
-   know the edges between bare records, so those come from `DEPENDENCIES` in
-   `code/upload_capsule/config.py`.
+2. **Builds the metadata with `aind-metadata-manager`**, in one pass
+   (`code/upload_capsule/metadata.py`). The producers' `*_data_process.json` records and
+   the asset's upstream `processing.json` files (`tile_alignment/`, `fusion/`,
+   `flatfield_correction/`, `denoised/`) go in together; the manager validates and merges
+   them, keeping each upstream document's dependency graph. It cannot know the edges
+   between bare records, so those come from `DEPENDENCIES` in
+   `code/upload_capsule/config.py`. Each published subfolder's `processing.json` is a
+   slice of that document.
 3. **Checks before publishing.** An invalid record, a record with no `DEPENDENCIES` entry,
    or a missing atlas alignment fails the run with nothing written.
 4. **Publishes** each stage's whitelisted files and stage `processing.json`, and the root

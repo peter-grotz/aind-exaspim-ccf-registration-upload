@@ -1,3 +1,0 @@
-#!/bin/sh
-# Git credential helper (CO build). Public deps need no token; returns it if set.
-echo "${GIT_ACCESS_TOKEN}"
