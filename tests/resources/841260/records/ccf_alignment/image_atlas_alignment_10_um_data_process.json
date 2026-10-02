@@ -1,0 +1,64 @@
+{
+  "code": {
+    "commit_hash": null,
+    "container": null,
+    "core_dependency": null,
+    "input_data": null,
+    "language": "Python",
+    "language_version": null,
+    "name": "aind-exaspim-ccf-registration",
+    "object_type": "Code",
+    "parameters": {
+      "dataset_id": "841260_10um",
+      "input_uri": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/fusion/fused_ccf_ch.zarr/",
+      "level": 2,
+      "resolution_um": 10,
+      "sample_to_template_registration": {
+        "affine_reg_iterations": [
+          300,
+          200,
+          50,
+          0
+        ],
+        "ccf_path": "../data/allen_mouse_ccf/average_template/average_template_10.nii.gz",
+        "exaspim_template_path": "../data/exaspim_template_7subjects_nomask_10um_round6_template_only/fixed_median.nii.gz",
+        "log_level": "ERROR",
+        "sample_scale": [
+          0.0135,
+          0.010125,
+          0.010125
+        ],
+        "syn_reg_iterations": [
+          400,
+          200,
+          40,
+          0
+        ]
+      },
+      "sample_to_template_transforms": [
+        "/tmp/nxf.SiFf4mTjuc/capsule/results/ccf_alignment/841260_to_exaSPIM_SyN_1Warp.nii.gz",
+        "/tmp/nxf.SiFf4mTjuc/capsule/results/ccf_alignment/841260_to_exaSPIM_SyN_0GenericAffine.mat"
+      ],
+      "template_to_ccf_transforms": [
+        "/data/reg_exaspim_template_to_ccf_25um_v1.4/1Warp.nii.gz",
+        "/data/reg_exaspim_template_to_ccf_25um_v1.4/0GenericAffine.mat"
+      ]
+    },
+    "run_script": "/code/run",
+    "url": "https://codeocean.allenneuraldynamics.org/capsule/6898460/tree",
+    "version": "0.0.1"
+  },
+  "end_date_time": "2026-07-31T01:23:13.647951Z",
+  "experimenters": [
+    "Peter Grotz"
+  ],
+  "name": "Image atlas alignment - 10 um",
+  "notes": "Import + 10um sample->CCF registration using transforms: ['/tmp/nxf.SiFf4mTjuc/capsule/results/ccf_alignment/841260_to_exaSPIM_SyN_1Warp.nii.gz', '/tmp/nxf.SiFf4mTjuc/capsule/results/ccf_alignment/841260_to_exaSPIM_SyN_0GenericAffine.mat'] and ['/data/reg_exaspim_template_to_ccf_25um_v1.4/1Warp.nii.gz', '/data/reg_exaspim_template_to_ccf_25um_v1.4/0GenericAffine.mat']",
+  "output_parameters": null,
+  "output_path": "ccf_alignment",
+  "pipeline_name": "exaspim-data-processing",
+  "process_type": "Image atlas alignment",
+  "resources": null,
+  "stage": "Processing",
+  "start_date_time": "2026-07-31T00:52:36.862239Z"
+}

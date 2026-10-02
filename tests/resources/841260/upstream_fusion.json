@@ -1,0 +1,103 @@
+{
+   "object_type": "Processing",
+   "describedBy": "https://raw.githubusercontent.com/AllenNeuralDynamics/aind-data-schema/main/src/aind_data_schema/core/processing.py",
+   "schema_version": "2.3.0",
+   "data_processes": [
+      {
+         "object_type": "Data process",
+         "process_type": "Image tile fusing",
+         "name": "Image tile fusing",
+         "stage": "Processing",
+         "code": {
+            "object_type": "Code",
+            "url": "https://github.com/AllenNeuralDynamics/Rhapso",
+            "name": "rhapso-affine-fusion",
+            "version": "e378308e848be06ec282b27279d0f68a381e6c79",
+            "commit_hash": null,
+            "container": null,
+            "run_script": "/code/run",
+            "language": "Python",
+            "language_version": null,
+            "input_data": null,
+            "parameters": {
+               "s3_xml_path": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/tile_alignment/rhapso/rhapso-solver-split-affine.xml",
+               "zarr_location": "s3://aind-open-data/exaSPIM_841260_2026-07-07_15-13-51_processed_2026-07-26_09-25-11/fusion/fused.zarr",
+               "block_size_xyz": [
+                  256,
+                  256,
+                  384
+               ],
+               "intensity_range": [
+                  0,
+                  65535
+               ],
+               "block_scale_xyz": [
+                  2,
+                  2,
+                  1
+               ],
+               "overlap_strategy": "lowest_view_wins",
+               "multiscale_chunk_size": [
+                  128,
+                  128,
+                  128
+               ],
+               "n_lvls": 8,
+               "scale_factor_zyx": [
+                  [
+                     2,
+                     2,
+                     2
+                  ],
+                  [
+                     2,
+                     2,
+                     2
+                  ],
+                  [
+                     2,
+                     2,
+                     2
+                  ],
+                  [
+                     2,
+                     2,
+                     2
+                  ],
+                  [
+                     2,
+                     2,
+                     2
+                  ],
+                  [
+                     2,
+                     2,
+                     2
+                  ],
+                  [
+                     2,
+                     2,
+                     2
+                  ]
+               ],
+               "target_block_size_mb": 256,
+               "base_level": 0
+            },
+            "core_dependency": null
+         },
+         "experimenters": [
+            "Sean Fite"
+         ],
+         "pipeline_name": null,
+         "start_date_time": "2026-07-29T07:11:58.288844Z",
+         "end_date_time": "2026-07-29T07:11:58.288844Z",
+         "output_path": null,
+         "output_parameters": null,
+         "notes": null,
+         "resources": null
+      }
+   ],
+   "pipelines": null,
+   "notes": null,
+   "dependency_graph": null
+}

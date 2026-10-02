@@ -1,0 +1,40 @@
+{
+  "code": {
+    "commit_hash": null,
+    "container": null,
+    "core_dependency": null,
+    "input_data": null,
+    "language": "Python",
+    "language_version": null,
+    "name": "aind-exaspim-ccf-registration",
+    "object_type": "Code",
+    "parameters": {
+      "ccf_annotation_path": "../data/allen_mouse_ccf/annotation/ccf_2017/annotation_10.nii.gz",
+      "ccf_template_path": "../data/allen_mouse_ccf/average_template/average_template_10.nii.gz",
+      "exaspim_template_path": "../data/exaspim_template_7subjects_nomask_10um_round6_template_only/fixed_median.nii.gz",
+      "level": 2,
+      "subject_id": "841260"
+    },
+    "run_script": "/code/run_register_ccf_annotation_10um.sh",
+    "url": "https://codeocean.allenneuraldynamics.org/capsule/6898460/tree",
+    "version": "0.0.1"
+  },
+  "end_date_time": "2026-07-31T02:24:21.897351Z",
+  "experimenters": [
+    "Peter Grotz"
+  ],
+  "name": "CCF annotation to sample space",
+  "notes": "Transforms CCF annotation into sample space and writes zarr/precomputed label volumes.",
+  "output_parameters": {
+    "standard_outputs": {
+      "annotation_image": "ccf_alignment/ccf_anno_to_sample/ccf_anno_in_sample_space.nii.gz",
+      "annotation_zarr": "ccf_alignment/ccf_anno_to_sample/ccf_anno_in_sample_space.zarr"
+    }
+  },
+  "output_path": "ccf_alignment/ccf_anno_to_sample",
+  "pipeline_name": "exaspim-data-processing",
+  "process_type": "Image atlas alignment",
+  "resources": null,
+  "stage": "Processing",
+  "start_date_time": "2026-07-31T02:02:46.900491Z"
+}

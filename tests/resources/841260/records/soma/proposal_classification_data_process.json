@@ -1,0 +1,40 @@
+{
+  "code": {
+    "commit_hash": null,
+    "container": null,
+    "core_dependency": null,
+    "input_data": null,
+    "language": "Python",
+    "language_version": null,
+    "name": "aind-exaspim-soma-detection",
+    "object_type": "Code",
+    "parameters": {
+      "accept_threshold": 0.5,
+      "model_path": "../data/CNN3D-20260503-150-0.9876.pth",
+      "multiscale": 2,
+      "output_dir": "../results/soma_detection/",
+      "patch_shape": [
+        84,
+        84,
+        84
+      ],
+      "save_swcs": true
+    },
+    "run_script": "/code/run",
+    "url": "https://github.com/AllenNeuralDynamics/aind-exaspim-soma-detection.git",
+    "version": "0.0.1"
+  },
+  "end_date_time": "2026-07-31T00:56:31.933866Z",
+  "experimenters": [
+    "Anna Grim"
+  ],
+  "name": "Proposal classification",
+  "notes": "Classify soma proposals with a 3d CNN",
+  "output_parameters": null,
+  "output_path": "soma_detection",
+  "pipeline_name": "exaspim-data-processing",
+  "process_type": "Image cell classification",
+  "resources": null,
+  "stage": "Processing",
+  "start_date_time": "2026-07-30T23:52:00.020394Z"
+}

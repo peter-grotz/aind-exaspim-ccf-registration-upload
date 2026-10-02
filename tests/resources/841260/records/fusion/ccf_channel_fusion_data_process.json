@@ -1,0 +1,36 @@
+{
+  "code": {
+    "commit_hash": null,
+    "container": null,
+    "core_dependency": null,
+    "input_data": null,
+    "language": "Java",
+    "language_version": null,
+    "name": "aind-exaspim-ccf-fusion",
+    "object_type": "Code",
+    "parameters": {
+      "block_scale": "4,4,4",
+      "channel": "ch_488",
+      "data_type": "UINT16",
+      "input_xml": "tile_alignment/rhapso/rhapso-solver-split-affine-ccf.xml",
+      "main_class": "net.preibisch.bigstitcher.spark.SparkAffineFusion",
+      "storage_format": "ZARR"
+    },
+    "run_script": "/code/run",
+    "url": "https://codeocean.allenneuraldynamics.org/capsule/1941809/tree",
+    "version": "0.0.0"
+  },
+  "end_date_time": "2026-07-31T00:35:10.851930Z",
+  "experimenters": [
+    "Peter Grotz"
+  ],
+  "name": "CCF channel fusion",
+  "notes": "Fuses the CCF-alignment channel. The flat-field brain mask is fused separately by the aind-exaspim-mask-fusion capsule.",
+  "output_parameters": null,
+  "output_path": "fusion/fused_ccf_ch.zarr",
+  "pipeline_name": "exaspim-data-processing",
+  "process_type": "Image tile fusing",
+  "resources": null,
+  "stage": "Processing",
+  "start_date_time": "2026-07-30T23:47:54Z"
+}
