@@ -23,7 +23,7 @@ RUN pip install -U --no-cache-dir \
     pydantic-settings \
     s3fs==2023.9.2 \
     openpyxl==3.1.5 \
-    aind-exaspim-dataset-utils@git+https://github.com/AllenNeuralDynamics/aind-exaspim-dataset-utils.git@689b6ca78daf95cedabb27ad1f4340ed01945515 \
+    smartsheet-python-sdk==4.4.0 \
     awscli
 
 # Official AIND metadata tooling (git-only; deps already satisfied above -> --no-deps).
