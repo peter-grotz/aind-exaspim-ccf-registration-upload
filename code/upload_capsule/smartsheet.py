@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 SHEET = "ExM Dataset Summary"
 REGISTERED = "CCF Registered"
@@ -57,7 +57,7 @@ def mark_registered(subject_id: str, token: str, today: date | None = None, clie
     if row_id is None:
         raise SmartsheetError(f"No row for subject {subject_id} in {SHEET!r}")
 
-    when = today or datetime.now(timezone.utc).date()
+    when = today or datetime.now(UTC).date()
     row = smartsheet.models.Row(
         {
             "id": row_id,

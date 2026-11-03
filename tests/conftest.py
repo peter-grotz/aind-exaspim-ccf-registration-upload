@@ -28,7 +28,9 @@ def s3(tmp_path):
     return DirFileSystem(path=str(root), fs=LocalFileSystem(auto_mkdir=True))
 
 
-def make_asset(fs, name: str, subject: str = "841260", upstream: bool = True) -> None:
+def make_asset(
+    fs, name: str, subject: str = "841260", upstream: bool = True, refined: bool = False
+) -> None:
     """Write a processed dataset with its core metadata and upstream stage records."""
     fs.makedirs(f"{BUCKET}/{name}", exist_ok=True)
     fs.pipe(f"{BUCKET}/{name}/subject.json", json.dumps({"subject_id": subject}).encode())
@@ -39,6 +41,11 @@ def make_asset(fs, name: str, subject: str = "841260", upstream: bool = True) ->
                 f"{BUCKET}/{name}/{sub}/processing.json",
                 (RESOURCES / f"upstream_{sub}.json").read_bytes(),
             )
+    if refined:
+        fs.pipe(
+            f"{BUCKET}/{name}/manual_ccf_refinement/processing.json",
+            (RESOURCES / "upstream_manual_ccf_refinement.json").read_bytes(),
+        )
 
 
 def make_data(data: Path, asset_name: str, records: bool = True) -> Path:

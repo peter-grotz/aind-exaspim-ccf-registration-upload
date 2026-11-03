@@ -9,8 +9,18 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-UPSTREAM_SUBFOLDERS = ("tile_alignment", "fusion", "flatfield_correction", "denoised")
-"""Subfolders of the input asset whose existing ``processing.json`` is merged, read-only."""
+UPSTREAM_SUBFOLDERS = (
+    "tile_alignment",
+    "fusion",
+    "flatfield_correction",
+    "denoised",
+    "manual_ccf_refinement",
+)
+"""Subfolders of the input asset whose existing ``processing.json`` is merged, read-only.
+
+``manual_ccf_refinement`` is written by the manual CCF refinement upload, not by this
+pipeline; it is merged so a re-publish keeps it.
+"""
 
 
 @dataclass(frozen=True)
@@ -83,6 +93,8 @@ DEPENDENCIES: dict[str, list[str]] = {
     "Proposal generation": ["Image tile fusing"],
     "Proposal classification": ["Proposal generation"],
     "Soma metrics": ["Proposal classification"],
+    # Published separately, by the manual CCF refinement upload.
+    "Manual CCF refinement": ["Image atlas alignment - 10 um"],
 }
 """Inputs of each process, by ``DataProcess.name``.
 
