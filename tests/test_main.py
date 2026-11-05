@@ -62,3 +62,16 @@ def test_a_missing_subject_fails_before_publishing(s3, tmp_path, monkeypatch):
     with pytest.raises(main.InputError):
         main.run(_args(tmp_path), s3)
     assert sorted(s3.find(f"{BUCKET}/{NAME}")) == before
+
+
+def test_a_published_manual_refinement_is_kept_in_the_root(s3, tmp_path, monkeypatch):
+    monkeypatch.delenv("SMARTSHEET_TOKEN", raising=False)
+    make_asset(s3, NAME, refined=True)
+    make_data(tmp_path / "data", NAME)
+    assert main.run(_args(tmp_path), s3) == 0
+    root = json.loads(s3.cat(f"{BUCKET}/{NAME}/processing.json"))
+    (refinement,) = [p for p in root["data_processes"] if p["name"] == "Manual CCF refinement"]
+    assert refinement["output_path"] == "manual_ccf_refinement"
+    assert "pipeline_name" not in refinement or refinement["pipeline_name"] is None
+    assert root["dependency_graph"]["Manual CCF refinement"] == ["Image atlas alignment - 10 um"]
+    assert not s3.exists(f"{BUCKET}/{NAME}/manual_ccf_refinement/ccf_alignment")
